@@ -77,11 +77,22 @@ if (args[0] === '--sheet') {
   fs.writeFileSync(path.join(OUT, 'sheet.png'), png(sw, sh, sheet));
   console.log('out/sheet.png', ts.join(' '));
 } else if (args[0] === '--video') {
+  // One live instance, stepped frame by frame through its own animation loop.
   const [from, to, fps] = args.slice(1).map(Number);
   const dir = path.join(OUT, 'seq'); fs.mkdirSync(dir, { recursive: true });
-  let n = 0;
-  for (let t = from; t < to; t += 1 / fps) {
-    fs.writeFileSync(path.join(dir, String(n++).padStart(5, '0') + '.png'), png(256, 144, frameAt(t.toFixed(4))));
+  let data = null, tick = null;
+  const ctx = { createImageData: (w, h) => { const d = { data: new Uint8ClampedArray(w * h * 4) }; data = d.data; return d; }, putImageData() {}, drawImage() {}, set imageSmoothingEnabled(v) {} };
+  const node = () => ({ style: {}, setAttribute() {}, appendChild() {}, addEventListener() {}, getBoundingClientRect: () => ({ width: 1024 }), getContext: () => ctx, width: 0, height: 0 });
+  const el = node();
+  new Function('window', 'document', 'location', 'URLSearchParams', 'requestAnimationFrame', SRC)(
+    { addEventListener() {}, devicePixelRatio: 1, matchMedia: null },
+    { readyState: 'complete', createElement: node, querySelectorAll: () => [el], addEventListener() {} },
+    { search: '' }, URLSearchParams, (f) => { tick = f; });
+  let ts = 1, n = 0;
+  tick(ts);
+  for (let t = 0; t < to; t += 1 / fps) {
+    ts += 1000 / fps; tick(ts);
+    if (t >= from) fs.writeFileSync(path.join(dir, String(n++).padStart(5, '0') + '.png'), png(256, 144, Buffer.from(data.buffer)));
   }
   console.log('frames', n);
 } else {

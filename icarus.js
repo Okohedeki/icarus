@@ -55,6 +55,7 @@
     c: '#6a4426', C: '#8c5c34', // leather cap
     o: '#26283a', // smoked glass
     p: '#a82838', P: '#6a1424', // cape
+    t: '#eab53e', n: '#c03040', l: '#d8c8a0', // wing tips, stripe, straps
   };
   const KEYS = Object.keys(PAL);
   const AC = new Uint32Array(KEYS.length + 1);
@@ -166,41 +167,59 @@
     return Object.assign({}, t, { goal: 'THE NEXT STAR', place: 'WORKSHOP ' + roman(chapter) });
   }
 
-  // ---------- what he changes each attempt ----------
-  const APPROACH = [
-    'WAX. FEATHERS. THREAD.',
-    'MORE WAX ON EVERY JOINT.',
-    'LONGER FEATHERS. WIDER SPAN.',
-    'A LEATHER CAP TO KEEP THE HEAT OFF.',
-    'A LINEN SUIT, SOAKED IN SEAWATER.',
-    'A BRONZE FRAME INSTEAD OF WOOD.',
-    'GOGGLES OF SMOKED GLASS.',
-    'SILVER FEATHERS FROM THE TEMPLE.',
-    'A CAPE TO CATCH THE WIND.',
-    'GOLD LEAF ON THE WING TIPS.',
-    'BOOTS WITH STRAPS. NO MORE SANDALS.',
-    'A HELMET SHAPED LIKE A FALCON.',
-  ];
-  const SUITS = [['#efe8d6', '#a89eb6', 'CREAM'], ['#cfe0ec', '#7f97b4', 'SEA BLUE'], ['#e8d0a0', '#a88a58', 'SAND'], ['#d8c8ec', '#9484b4', 'LILAC'], ['#f0d0c8', '#b08888', 'ROSE']];
-  const FEATHERS = [['#fbf8f0', '#c4c7d8', '#7d84a0', 'THE CLIFF GULLS'], ['#eef4ff', '#a8b8d8', '#6878a0', 'THE TEMPLE DOVES'], ['#fff4d8', '#e0c890', '#a08850', 'THE DESERT HAWKS'], ['#f4ecff', '#c8b8e8', '#8878b0', 'THE NIGHT OWLS']];
-  function gearFor(n) {
-    const g = {
-      waxJoints: n >= 2, cap: n >= 4, bronze: n >= 6, goggles: n >= 7, cape: n >= 9, goldTips: n >= 10, boots: n >= 11, helmet: n >= 12,
-      span: 1 + 0.035 * Math.min(n - 1, 10) + (n >= 3 ? 0.06 : 0), nf: 8 + Math.min(n - 1, 6),
-      suit: n < 5 ? 0 : n < 13 ? 1 : (1 + Math.floor((n - 11) / 2)) % SUITS.length,
-      feathers: n < 8 ? 0 : n < 14 ? 1 : (1 + Math.floor((n - 12) / 2)) % FEATHERS.length,
-    };
-    return g;
+  // ---------- the wings: every attempt changes them ----------
+  const FEATHER_TINTS = [['WHITE', '#fbf8f0', '#c4c7d8', '#7d84a0'], ['SILVER', '#eef4ff', '#a8b8d8', '#6878a0'], ['SAND', '#fff4d8', '#e0c890', '#a08850'],
+    ['SKY', '#e8f4ff', '#9cc8ec', '#5a86b8'], ['ASH', '#e2dfd8', '#a29e96', '#625e58'], ['RAVEN', '#6a687a', '#43414f', '#26242e'],
+    ['AMBER', '#ffe6b0', '#e8a848', '#a86a20'], ['ROSE', '#fde8e8', '#e0a8b0', '#a06a78']];
+  const ACCENTS = [['GOLD', '#eab53e'], ['CRIMSON', '#c03040'], ['TEAL', '#2a9a90'], ['COBALT', '#3858c8'], ['JADE', '#4aa860'], ['VIOLET', '#8a50c0'], ['EBONY', '#2a2430'], ['IVORY', '#f0e8d0']];
+  const FRAMES = [['WAX', '#f6ca4a', '#b07c1c'], ['WILLOW', '#b08a50', '#6e5228'], ['BRONZE', '#d0884a', '#8a5420'], ['IRON', '#9a9ea8', '#4a4e58'], ['SILVER', '#e0e4ee', '#8a90a0'], ['OAK', '#8c5a2e', '#4e2e16']];
+  const ATTEMPTS = 10; // the last attempt of every cycle reaches the sun
+  const baseDesign = () => ({ span: 0.85, nf: 8, fl: 1, feather: FEATHER_TINTS[0], frame: FRAMES[0], thick: false, joints: false, straps: null, coverts: 0, tips: null, band: null, tipShape: 'round' });
+  function rng(seed) {
+    return () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   }
-  function approach(n) {
-    if (n <= APPROACH.length) return APPROACH[n - 1];
-    const g = gearFor(n);
-    return (n - 13) % 2 === 0 ? 'A NEW SUIT, DYED ' + SUITS[g.suit][2] + '.' : 'FEATHERS FROM ' + FEATHERS[g.feathers][3] + '.';
+  const pick = (r, a) => a[Math.floor(r() * a.length)];
+  // One change to the wings: the line he says, and what it does
+  function makeChange(kind, d, r, param) {
+    switch (kind) {
+      case 'joints': return d.joints ? null : { text: 'WAX ON EVERY JOINT.', apply: () => { d.joints = true; } };
+      case 'longer': return d.fl > 1.4 ? null : { text: 'LONGER FEATHERS.', apply: () => { d.fl += 0.18; } };
+      case 'more': return d.nf > 14 ? null : { text: 'MORE FEATHERS.', apply: () => { d.nf += 3; } };
+      case 'rows': return d.coverts > 1 ? null : { text: d.coverts ? 'A THIRD ROW OF FEATHERS.' : 'A SECOND ROW OF FEATHERS.', apply: () => { d.coverts++; } };
+      case 'straps': { const c = param || pick(r, ACCENTS); return d.straps ? null : { text: c[0] + ' STRAPS.', apply: () => { d.straps = c[1]; } }; }
+      case 'frame': { const m = param || pick(r, FRAMES.filter((f) => f !== d.frame)); return { text: 'A ' + m[0] + ' FRAME.', apply: () => { d.frame = m; d.thick = true; } }; }
+      case 'tint': { const t = param || pick(r, FEATHER_TINTS.filter((f) => f !== d.feather)); return { text: t[0] + ' FEATHERS.', apply: () => { d.feather = t; } }; }
+      case 'tips': { const a = param || pick(r, ACCENTS); return d.tips === a[1] ? null : { text: 'TIPS DIPPED IN ' + a[0] + '.', apply: () => { d.tips = a[1]; } }; }
+      case 'band': { const a = param || pick(r, ACCENTS); return d.band === a[1] ? null : { text: 'A ' + a[0] + ' STRIPE.', apply: () => { d.band = a[1]; } }; }
+      case 'eagle': return d.tipShape === 'eagle' ? null : { text: 'EAGLE FEATHER TIPS.', apply: () => { d.tipShape = 'eagle'; } };
+      case 'falcon': return d.tipShape === 'falcon' ? null : { text: 'LONG POINTED FALCON TIPS.', apply: () => { d.tipShape = 'falcon'; } };
+    }
+    return null;
   }
-  function wearGear(g) {
-    setPal('w', SUITS[g.suit][0]); setPal('W', SUITS[g.suit][1]);
-    setPal('f', FEATHERS[g.feathers][0]); setPal('F', FEATHERS[g.feathers][1]); setPal('q', FEATHERS[g.feathers][2]);
-    if (g.bronze) { setPal('x', '#d0884a'); setPal('X', '#8a5420'); } else { setPal('x', PAL.x); setPal('X', PAL.X); }
+  const FIRST_CYCLE = [null, ['joints'], ['longer'], ['straps', ['LINEN', '#d8c8a0']], ['rows'], ['frame', FRAMES[2]], ['tint', FEATHER_TINTS[1]], ['tips', ACCENTS[0]], ['band', ACCENTS[1]], ['eagle']];
+  const KINDS = ['joints', 'longer', 'more', 'rows', 'straps', 'frame', 'tint', 'tips', 'band', 'eagle', 'falcon'];
+  // Every attempt of one cycle. The first cycle is written out; later ones are generated.
+  function planCycle(cycle) {
+    const r = rng(cycle * 7919 + 13);
+    const d = baseDesign();
+    if (cycle > 1) { d.feather = pick(r, FEATHER_TINTS); d.frame = pick(r, FRAMES); }
+    const plan = [{ text: cycle === 1 ? 'WAX, FEATHERS, THREAD.' : 'NEW WINGS. A NEW DESIGN.', design: Object.assign({}, d) }];
+    let lastKind = null;
+    for (let n = 2; n <= ATTEMPTS; n++) {
+      let ch = null, kind = null;
+      if (cycle === 1) { const st = FIRST_CYCLE[n - 1]; kind = st[0]; ch = makeChange(kind, d, r, st[1]); }
+      for (let tries = 0; !ch && tries < 40; tries++) { kind = pick(r, KINDS); if (kind !== lastKind) ch = makeChange(kind, d, r); }
+      lastKind = kind;
+      ch.apply();
+      d.span += 0.055; d.nf = Math.min(18, d.nf + 1);
+      plan.push({ text: ch.text, design: Object.assign({}, d) });
+    }
+    return plan;
+  }
+  function wearGear(d) {
+    setPal('f', d.feather[1]); setPal('F', d.feather[2]); setPal('q', d.feather[3]);
+    setPal('x', d.frame[1]); setPal('X', d.frame[2]);
+    setPal('t', d.tips || d.feather[2]); setPal('n', d.band || d.feather[2]); setPal('l', d.straps || '#d8c8a0');
   }
 
   // ---------- the music (original, a minor-key march) ----------
@@ -321,30 +340,52 @@
     const snap = (v) => Math.round(v) + 0.5;
     const dir = (a) => [Math.cos(a), Math.sin(a)];
 
-    // A wing seen from the side. phi: 0 = raised, pi/2 = edge-on, >pi/2 = lowered.
-    function wing(root, back, tail, phi, w, far) {
-      const { L, FL, melt, gear } = w;
-      const c = Math.cos(phi);
-      const ex = back[0] * c * L + tail[0] * 0.32 * L, ey = back[1] * c * L + tail[1] * 0.32 * L;
-      let fx = tail[0] + back[0] * c * 0.3, fy = tail[1] + back[1] * c * 0.3;
-      const fl = Math.hypot(fx, fy) || 1; fx /= fl; fy /= fl;
-      const NF = gear.nf;
+    // A wing: an edge (E) from the root, with feathers trailing along fdir.
+    function wingCore(root, E, fdir, FL, melt, d, far, count) {
+      const NF = d.nf, fl = FL * d.fl;
+      const bases = [];
       let shown = 0;
       for (let i = NF; i >= 1; i--) {
+        if (count != null && i > count) continue;
         const t = i / NF;
         if (melt > 0 && t > 1 - melt * 0.98) continue;
         shown++;
-        const bx = root[0] + ex * t, by = root[1] + ey * t;
-        const len = FL * (0.35 + 0.65 * Math.pow(t, 0.8)) * (1 - 0.3 * melt);
+        const bx = root[0] + E[0] * t, by = root[1] + E[1] * t;
+        let len = fl * (0.35 + 0.65 * Math.pow(t, 0.8)) * (1 - 0.3 * melt), r = 1.05;
+        if (d.tipShape !== 'round' && i > NF - 3) { len *= d.tipShape === 'falcon' ? 1.6 : 1.4; r = d.tipShape === 'falcon' ? 0.8 : 1.2; }
         const odd = i & 1;
-        const tip = gear.goldTips && !far ? 'g' : far ? 'q' : 'F';
-        capsule(bx, by, bx + fx * len, by + fy * len, 1.05, (u) =>
-          (u > 0.78 ? tip : far ? (odd ? 'F' : 'q') : odd ? 'f' : 'F'));
-        if (gear.waxJoints && !far && len > 2) capsule(bx, by, bx, by, 1.3, 'x');
+        capsule(bx, by, bx + fdir[0] * len, by + fdir[1] * len, r, (u) => {
+          if (d.band && u > 0.56 && u < 0.72) return 'n';
+          if (u > 0.8) return d.tips ? 't' : far ? 'q' : 'F';
+          return far ? (odd ? 'F' : 'q') : odd ? 'f' : 'F';
+        });
+        if (d.joints && !far && len > 2) capsule(bx, by, bx, by, 1.4, 'x');
+        bases.push([bx, by, len]);
       }
-      capsule(root[0], root[1], root[0] + ex, root[1] + ey, 0.9, far ? 'X' : 'x');
       commit();
-      return { shown, tip: [root[0] + ex, root[1] + ey], root, ex, ey };
+      for (let row = 1; row <= d.coverts && !far; row++) {
+        const k = row === 1 ? 0.5 : 0.28;
+        for (const [bx, by, len] of bases) capsule(bx, by, bx + fdir[0] * len * k, by + fdir[1] * len * k, 1.1, row === 1 ? 'F' : 'f');
+        commit();
+      }
+      capsule(root[0], root[1], root[0] + E[0], root[1] + E[1], d.thick ? 1.4 : 0.9, far ? 'X' : 'x');
+      commit();
+      if (d.straps && !far) {
+        const L = Math.hypot(E[0], E[1]) || 1, nx = -E[1] / L, ny = E[0] / L;
+        for (const t of [0.3, 0.6, 0.85]) {
+          const cx = root[0] + E[0] * t, cy = root[1] + E[1] * t;
+          capsule(cx - nx * 2.2, cy - ny * 2.2, cx + nx * 2.2, cy + ny * 2.2, 1, 'l');
+        }
+        commit();
+      }
+      return { shown, tip: [root[0] + E[0], root[1] + E[1]], root, ex: E[0], ey: E[1] };
+    }
+    // A wing seen from the side. phi: 0 = raised, pi/2 = edge-on, >pi/2 = lowered.
+    function wing(root, back, tail, phi, w, far) {
+      const c = Math.cos(phi);
+      const E = [back[0] * c * w.L + tail[0] * 0.32 * w.L, back[1] * c * w.L + tail[1] * 0.32 * w.L];
+      const fx = tail[0] + back[0] * c * 0.3, fy = tail[1] + back[1] * c * 0.3, fl = Math.hypot(fx, fy) || 1;
+      return wingCore(root, E, [fx / fl, fy / fl], w.FL, w.melt, w.gear, far);
     }
 
     // The rig. Angles are screen radians (0 = right, pi/2 = down).
@@ -531,18 +572,11 @@
       for (let i = 0; i < 3; i++) if (hash(i, (tAll * 4) | 0) < 0.5) px(11 + i * 4, 85, COL.wax);
       const fl = hash(1, (tAll * 10) | 0) < 0.5 ? 0 : 1;
       px(169, 47 - fl, COL.flameB); px(169, 48, COL.flameA); px(170, 48, COL.flameB); px(169, 46 - fl, COL.flameA);
-      // chalk chart of every flight so far: each bar taller than the last
-      const hist = history.slice(-11);
-      if (hist.length) {
-        const lo = Math.log(hist[0] + 1), hi = Math.log(hist[hist.length - 1] + 1);
-        const x0 = 140, base = 34;
-        for (let i = 0; i < hist.length; i++) {
-          const f = hi > lo ? (Math.log(hist[i] + 1) - lo) / (hi - lo) : 1;
-          const hgt = Math.round(4 + f * 18);
-          for (let j = 0; j < hgt; j++) { px(x0 + i * 4, base - j, COL.chalk); px(x0 + i * 4 + 1, base - j, COL.chalk); }
-        }
-        for (let i = -2; i < hist.length * 4; i++) px(x0 + i, base + 1, COL.chalk);
-        for (let j = 0; j < 24; j++) px(x0 - 2, base - j, COL.chalk);
+      // chalk tally of the attempts so far
+      for (let m = 0; m < failedHere; m++) {
+        const g = (m / 5) | 0, j = m % 5, x0 = 142 + g * 12, y0 = 16;
+        if (j < 4) for (let i = 0; i < 6; i++) px(x0 + j * 2, y0 + i, COL.chalk);
+        else for (let i = 0; i < 8; i++) px(x0 - 1 + i, y0 + 5 - ((i * 0.7) | 0), COL.chalk);
       }
       // the wings that melted in this workshop
       for (let h = 0; h < Math.min(failedHere, 10); h++) {
@@ -556,30 +590,19 @@
       }
     }
 
-    function drawRack(progress, gear) {
+    function drawRack(progress, d) {
       capsule(86, 110, 98, 74, 1, 'r'); capsule(114, 110, 104, 74, 1, 'R');
       capsule(90, 94, 110, 94, 0.8, 'r');
       commit();
       if (progress < 0) return;
-      const sp = gear.span, NF = gear.nf;
-      const root = [112.5, 75.5], ex = -30 * sp, ey = -14 * sp;
-      const shown = Math.floor(progress * (NF + 0.99));
-      for (let i = NF; i >= 1; i--) {
-        if (i > shown) continue;
-        const t = i / NF, bx = root[0] + ex * t, by = root[1] + ey * t;
-        const len = 18 * sp * (0.35 + 0.65 * Math.pow(t, 0.8));
-        const odd = i & 1, tip = gear.goldTips ? 'g' : 'F';
-        capsule(bx, by, bx + 0.25 * len, by + len, 1.05, (u) => (u > 0.78 ? tip : odd ? 'f' : 'F'));
-        if (gear.waxJoints) capsule(bx, by, bx, by, 1.3, 'x');
-      }
-      capsule(root[0], root[1], root[0] + ex, root[1] + ey, 0.9, 'x');
-      commit();
+      const sp = d.span;
+      wingCore([112.5, 75.5], [-30 * sp, -14 * sp], [0.24, 0.97], 18 * sp, 0, d, false, Math.floor(progress * (d.nf + 0.99)));
     }
 
     // h: how far toward the goal (0..1). s: how close to the star (0..1+).
     function sky(T, h, s, starShift, sunX, sunY, R) {
       const glowR = 12 + 34 * s, glowK = 2 + 5 * s;
-      const starP = Math.max(T.space ? 0.012 : 0, h > 0.6 ? (h - 0.6) * 0.04 : 0);
+      const starP = h > 0.8 ? (h - 0.8) * 0.05 : 0;
       for (let y = 0; y < H; y++) {
         let base = 3.6 + (y / H) * (3.4 - 1.6 * h) - h * 3.0 - s * 0.6 - T.space;
         if (T.island && y > 70) base += ((y - 70) / 60) * 2.2 * clamp(1 - h * 4, 0, 1);
@@ -710,62 +733,55 @@
     }
 
     // ---------- the story ----------
-    // Each chapter has K attempts. Each flies higher; the last reaches the star.
-    const K = 5;
-    const FRAC = [0.14, 0.32, 0.52, 0.76, 1];
-    const goalFt = (c) => Math.round((10000 * Math.pow(2.4, c - 1)) / 100) * 100;
-    const baseFt = (c) => { let b = 0; for (let i = 1; i < c; i++) b += goalFt(i); return b; };
-    const DUR = { build: 5.6, equip: 1.7, run: 1.9, melt: 3.0, fall: 2.6, splash: 3.2, ascend: 3.8 };
-    const flyDur = () => 6.5 + k * 0.5;
+    // Ten attempts per cycle. Each one climbs for longer than the last. The tenth
+    // reaches the sun, and the story starts over with a newly designed set of wings.
+    const T = THEMES[0];
+    const G = 10000; // feet from the sea to the sun
+    const KPX = 0.08; // screen pixels per foot
+    const DUR = { build: 5.4, equip: 1.7, run: 1.9, melt: 2.6, fall: 2.6, splash: 2.2, ascend: 3.6 };
+    const flyDur = () => 4 + 1.3 * k;
     const dur = (name) => (name === 'fly' ? flyDur() : DUR[name]);
-    let chapter = 1, k = 1, attempt = 1, phase = 'build', pt = 0;
-    let fromSun = false, lastHit = false, lastA = 0, newHeightAt = -99, best = 0;
-    let history = [];
-    let gear = gearFor(1), head = headFor(gear), lastShown = gear.nf;
+    let cycle = 1, k = 1, phase = 'build', pt = 0, fromSun = false, lastHit = false;
+    let plan = planCycle(1), gear = plan[0].design, lastShown = gear.nf;
 
-    const TIERS = [[0, 'LIFTOFF'], [0.15, 'CLIMBING'], [0.45, 'HALFWAY THERE'], [0.7, 'ALMOST THERE'], [0.97, 'AT ']];
-    const tierName = (f, T) => { const t = TIERS.filter((x) => f >= x[0]).pop()[1]; return t === 'AT ' ? 'AT ' + T.goal : t; };
-
-    // Where he is in the sky right now (local feet within this chapter)
+    // Where he is in the sky right now
     function flight() {
-      const G = goalFt(chapter), target = G * FRAC[k - 1];
-      const kpx = Math.min(0.05, 120 / target); // screen pixels per foot, per attempt
-      let A, s, icX, icY;
+      const target = (G * k) / ATTEMPTS;
+      let A, icX, icY;
       if (phase === 'fly') {
-        const f = pt / flyDur(), e = smooth(f);
-        A = target * (0.5 * f + 0.5 * e);
-        icX = lerp(40, 128, e); icY = lerp(86, 60, e) + Math.sin(tAll * TAU * 2) * 1.5;
+        const f = pt / flyDur(), e = smooth(f), arrive = smooth(Math.min(1, f * 3));
+        A = target * (0.7 * f + 0.3 * e);
+        icX = lerp(40, 118, arrive); icY = lerp(86, 62, arrive) + Math.sin(tAll * TAU * 2) * 1.5;
       } else if (phase === 'melt') {
-        const m = pt / 3;
-        A = target * (1 + 0.02 * m);
-        icX = 128 + 12 * m; icY = 60 - 4 * m + Math.sin(tAll * 40) * m * 1.2;
+        const m = pt / DUR.melt;
+        A = target * (1 + 0.01 * m);
+        icX = 118 + 12 * m; icY = 62 - 4 * m + Math.sin(tAll * 40) * m * 1.2;
       } else if (phase === 'fall') {
-        const f = pt / 2.6;
-        A = target * 1.02 * (1 - Math.pow(f, 1.7));
-        icX = 140 + 10 * f; icY = 56 + 42 * f;
+        const f = pt / DUR.fall;
+        A = target * 1.01 * (1 - Math.pow(f, 1.7));
+        icX = 130 + 10 * f; icY = 58 + 40 * f;
       } else if (phase === 'ascend') {
-        const a = smooth(pt / 2.6);
-        A = G * (1 + 0.04 * a);
-        icX = lerp(128, 200, a); icY = lerp(60, 34, a) + Math.sin(tAll * TAU * 2) * 1.5;
+        const a = smooth(pt / 2.4);
+        A = G * (1 + 0.03 * a);
+        icX = lerp(118, 200, a); icY = lerp(62, 34, a) + Math.sin(tAll * TAU * 2) * 1.5;
       } else { A = 0; icX = splashX; icY = 200; }
-      s = A / G;
-      return { A, s, icX, icY, kpx, target, G };
+      return { A, near: A / G, icX, icY };
     }
 
     // Sound
     let audio = null, soundOn = false, nextNote = 0, noteIdx = 0, bassIdx = 0, nextBass = 0;
     const STEP = 60 / 132 / 2;
-    function tone(freq, start, dur_, type, vol) {
+    function tone(freq, start, len, type, vol) {
       const o = audio.createOscillator(), g = audio.createGain();
       o.type = type; o.frequency.value = freq;
       g.gain.setValueAtTime(0, start);
       g.gain.linearRampToValueAtTime(vol, start + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0008, start + dur_);
+      g.gain.exponentialRampToValueAtTime(0.0008, start + len);
       o.connect(g).connect(audio.destination);
-      o.start(start); o.stop(start + dur_ + 0.02);
+      o.start(start); o.stop(start + len + 0.02);
     }
-    function noise(start, dur_, vol, cutoff) {
-      const b = audio.createBuffer(1, Math.ceil(audio.sampleRate * dur_), audio.sampleRate);
+    function noise(start, len, vol, cutoff) {
+      const b = audio.createBuffer(1, Math.ceil(audio.sampleRate * len), audio.sampleRate);
       const d = b.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
       const s = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain();
@@ -779,7 +795,6 @@
       if (kind === 'whoosh') noise(t, 0.5, 0.25, 900);
       if (kind === 'splash') { noise(t, 0.9, 0.5, 1600); tone(110, t, 0.3, 'triangle', 0.15); }
       if (kind === 'drip') tone(1320 + Math.random() * 400, t, 0.05, 'triangle', 0.03);
-      if (kind === 'best') [0, 4, 7, 12].forEach((n, i) => tone(NOTE(76 + n), t + i * 0.07, 0.18, 'square', 0.04));
       if (kind === 'triumph') [0, 4, 7, 12, 16, 19, 24].forEach((n, i) => tone(NOTE(69 + n), t + i * 0.11, 0.4, 'square', 0.05));
     }
     function scheduleMusic() {
@@ -813,7 +828,7 @@
         case 'build': return 'equip';
         case 'equip': return 'run';
         case 'run': return 'fly';
-        case 'fly': return k === K ? 'ascend' : 'melt';
+        case 'fly': return k === ATTEMPTS ? 'ascend' : 'melt';
         case 'melt': return 'fall';
         case 'fall': return 'splash';
         default: return 'build';
@@ -822,48 +837,29 @@
     function enter(next) {
       const prev = phase;
       phase = next;
-      if (next === 'splash' || next === 'ascend') {
-        const peak = baseFt(chapter) + goalFt(chapter) * FRAC[k - 1];
-        best = Math.max(best, peak);
-        history.push(peak);
-      }
       if (next === 'splash') {
-        const T = themeFor(chapter);
         for (let i = 0; i < 46; i++) spawn({ k: 'splash', x: splashX + (Math.random() - 0.5) * 8, y: splashY, vx: (Math.random() - 0.5) * 90, vy: -50 - Math.random() * 110, g: 240, life: 1.4, c: i % 3 ? T.sea[0] : T.sea[4] });
         sfx('splash');
       }
       if (next === 'ascend') sfx('triumph');
       if (next === 'build') {
-        attempt++;
-        if (prev === 'ascend') { chapter++; k = 1; fromSun = true; } else { k++; fromSun = false; }
-        parts = []; lastA = 0;
-        gear = gearFor(attempt); head = headFor(gear); lastShown = gear.nf;
+        if (prev === 'ascend') { cycle++; k = 1; plan = planCycle(cycle); fromSun = true; } else { k++; fromSun = false; }
+        gear = plan[k - 1].design; lastShown = gear.nf; parts = [];
       }
     }
 
     function update(dt) {
       tAll += dt; pt += dt;
-
-      if (phase === 'fly' && k > 1) {
-        const prevPeak = goalFt(chapter) * FRAC[k - 2];
-        const fl = flight();
-        if (lastA < prevPeak && fl.A >= prevPeak) {
-          newHeightAt = tAll;
-          for (let i = 0; i < 24; i++) { const a = (i / 24) * TAU; spawn({ k: 'spark', x: fl.icX, y: fl.icY - 6, vx: Math.cos(a) * 70, vy: Math.sin(a) * 70, life: 0.7, c: i % 2 ? COL.flameA : COL.white }); }
-          sfx('best');
-        }
-        lastA = fl.A;
-      }
       if (phase === 'build') {
         const ph = (pt * 2.2) % 1, hit = ph >= 0.55;
-        if (hit && !lastHit && pt > 0.3 && pt < 5.2) {
+        if (hit && !lastHit && pt > 0.3 && pt < 5.0) {
           for (let i = 0; i < 6; i++) spawn({ k: 'spark', x: hammerAt[0], y: hammerAt[1], vx: (Math.random() - 0.3) * 60, vy: -Math.random() * 60, g: 160, life: 0.35, c: i % 2 ? COL.flameA : COL.flameB });
           sfx('clink');
         }
         lastHit = hit;
       }
       if (phase === 'run' && pt > 1.45 && pt - dt <= 1.45) sfx('whoosh');
-      if (phase === 'melt' && wingInfo && Math.random() < 0.25 + smooth(pt / 3) * 0.6) {
+      if (phase === 'melt' && wingInfo && Math.random() < 0.25 + smooth(pt / DUR.melt) * 0.6) {
         const r = Math.random();
         spawn({ k: 'drip', x: wingInfo.root[0] + wingInfo.ex * r, y: wingInfo.root[1] + wingInfo.ey * r, vy: 6, g: 120, life: 1.6, c: Math.random() < 0.5 ? COL.wax : COL.waxLo });
         if (Math.random() < 0.15) sfx('drip');
@@ -871,25 +867,29 @@
       if (phase === 'fall') for (let i = 0; i < 2; i++) spawn({ k: 'speed', x: Math.random() * W, y: H + 4, vy: -280 - Math.random() * 120, life: 1 });
       if (phase === 'ascend' && Math.random() < 0.6) spawn({ k: 'spark', x: Math.random() * W, y: Math.random() * H, vx: -40, vy: 30, life: 0.5, c: COL.white });
       stepParts(dt);
-
       if (pt >= dur(phase)) { pt -= dur(phase); enter(nextPhase()); }
     }
 
+    // one short line, only in the workshop
+    function caption(str) {
+      box(8, H - 26, W - 16, 20);
+      text(str, 16, H - 19);
+    }
+
     function render() {
-      const T = themeFor(chapter);
       wearGear(gear);
       wingInfo = null;
+      const sp = gear.span;
 
       if (phase === 'build' || phase === 'equip' || phase === 'run') {
         drawWorkshop(T, k - 1);
-        drawRack(phase === 'build' ? smooth((pt - 0.3) / 4.9) : phase === 'equip' && pt < 0.35 ? 1 : -1, gear);
+        drawRack(phase === 'build' ? smooth((pt - 0.3) / 4.6) : phase === 'equip' && pt < 0.35 ? 1 : -1, gear);
         let p;
-        const sp = gear.span;
         if (phase === 'build') {
           p = stand(62, 97);
           const ph = (pt * 2.2) % 1;
-          if (pt < 5.2 && ph < 0.55) p.aF = [-0.15, -1.2]; else if (pt < 5.2) p.aF = [0.05, 0.45];
-          p.hammer = pt < 5.2;
+          if (pt < 5.0 && ph < 0.55) p.aF = [-0.15, -1.2]; else if (pt < 5.0) p.aF = [0.05, 0.45];
+          p.hammer = pt < 5.0;
           p.aB = [DOWN - 0.35, DOWN - 0.9];
         } else if (phase === 'equip') {
           p = stand(62, 97);
@@ -914,42 +914,37 @@
           if (jump > 0) { p.lF = [DOWN - 0.9, DOWN + 0.4]; p.lB = [DOWN + 0.6, DOWN + 1.4]; p.aF = [-0.9, -1.0]; }
           p.wings = { phi: 0.2 + 1.3 * (0.5 - 0.5 * Math.cos(tAll * TAU * (jump > 0 ? 3 : 1.4))), L: 18 * sp, FL: 14 * sp, melt: 0, gear };
         }
-        const o = icarus(p, gear, head);
+        const o = icarus(p, gear, HEAD);
         if (o.hammerHead) hammerAt = o.hammerHead;
         flushActors();
         drawParts(['spark']);
-
         if (phase === 'build') {
-          if (k === 1 && pt < 2.6) {
-            if (chapter === 1) title('ICARUS');
-            else title('CHAPTER ' + roman(chapter), T.place);
-          } else if (pt > (k === 1 ? 2.8 : 0.5) && pt < 5.3) {
-            dialog([attempt === 1 ? 'ATTEMPT 1.' : 'ATTEMPT ' + attempt + '.  BEST: ' + fmt(best) + ' FT', approach(attempt)]);
-          }
+          if (pt > 0.6 && pt < 4.8) caption('ATTEMPT ' + k + ': ' + plan[k - 1].text);
           fade(1 - pt / 0.8, fromSun ? COL.white : COL.black);
         }
         return;
       }
 
-      // ----- outside: flight, melt, fall, splash, ascend -----
-      const fl = flight();
-      const { A, s: near, icX, icY, kpx, target, G } = fl;
+      // ----- outside: flight, melt, fall, splash, the sun -----
+      const { A, near, icX, icY } = flight();
       const flyT = phase === 'fly' ? pt : flyDur();
       const camX = flyT * 42 + (phase === 'melt' ? pt * 20 : phase === 'fall' || phase === 'splash' ? 60 : phase === 'ascend' ? pt * 30 : 0);
       const REF = 70; // screen row where the current altitude sits
-      const seaTop = REF + 34 + A * kpx;
-      const asc = phase === 'ascend' ? smooth((pt - 0.6) / 3.0) : 0;
+      const seaTop = REF + 34 + A * KPX;
+      const asc = phase === 'ascend' ? smooth((pt - 0.6) / 2.8) : 0;
       const sunR = 7 + 30 * Math.pow(clamp(near, 0, 1.1), 1.3) + asc * asc * 320;
       const sunX = 206, sunY = 30 + 4 * clamp(near, 0, 1);
-      sky(T, clamp(A / G, 0, 1), clamp(near, 0, 1.1), A * kpx * 0.25, sunX, sunY, sunR);
+      sky(T, clamp(near, 0, 1), clamp(near, 0, 1.1), A * KPX * 0.25, sunX, sunY, sunR);
 
-      // cloud decks at fixed heights: early attempts stay under them, later ones break through
-      if (T.clouds) {
-        const DECKS = [[0.09, [[40, 0, 1.0], [170, -8, 1.3], [300, 6, 0.9]]], [0.24, [[100, 0, 1.2], [230, 6, 0.9], [350, -4, 1.1]]], [0.42, [[20, 0, 1.1], [160, 5, 1.4], [280, -6, 1.0]]]];
-        for (const [fd, list] of DECKS) for (const [x, dy, sc] of list) {
-          const cy = REF - (fd * G - A) * kpx + dy;
-          const cx = mod(x - camX * 0.6, W + 100) - 50;
-          if (cy > -20 && cy < H + 20) cloud(cx, cy, sc, near > 0.62);
+      // cloud layers at fixed heights: longer flights climb past more of them
+      for (let i = 0; i < 12; i++) {
+        const Ad = 450 + i * 720;
+        if (Ad > 0.8 * G) break;
+        for (let j = 0; j < 3; j++) {
+          const cy = REF - (Ad - A) * KPX + (hash(i, j) - 0.5) * 16;
+          if (cy < -20 || cy > H + 20) continue;
+          const cx = mod(hash(j, i) * 360 - camX * (0.5 + 0.2 * j), W + 100) - 50;
+          cloud(cx, cy, 0.8 + hash(i + 7, j) * 0.6, near > 0.62);
         }
       }
       if (seaTop < H) {
@@ -966,20 +961,8 @@
         }
       }
 
-      // the last attempt's height, waiting in the sky
-      if (k > 1 && (phase === 'fly' || phase === 'melt')) {
-        const prevLocal = G * FRAC[k - 2];
-        const by = Math.round(icY - (prevLocal - A) * kpx);
-        if (by > -4 && by < H) {
-          for (let x = 0; x < W; x++) if (mod(x + ((tAll * 20) | 0), 7) < 4) px(x, by, COL.wax);
-          const lbl = 'BEST ' + fmt(baseFt(chapter) + prevLocal);
-          text(lbl, W - textW(lbl) - 6, by - 10);
-        }
-      }
-
       if (phase !== 'splash') {
         const p = stand(icX, icY);
-        const sp = gear.span;
         if (phase === 'fall') {
           const spin = -0.45 + pt * 7.5;
           p.t = spin;
@@ -997,11 +980,11 @@
           p.aB = [p.t + 0.15, p.t + 0.05];
           p.lF = [p.t + Math.PI - 0.15, p.t + Math.PI + 0.05];
           p.lB = [p.t + Math.PI + 0.12, p.t + Math.PI + 0.4];
-          const m = phase === 'melt' ? smooth(pt / 3) : 0;
+          const m = phase === 'melt' ? smooth(pt / DUR.melt) : 0;
           const hz = phase === 'melt' ? 3.2 + m * 2 : phase === 'ascend' ? 2.6 : 2.0;
           p.wings = { phi: 0.1 + 2.5 * (0.5 - 0.5 * Math.cos(tAll * TAU * hz)), L: 22 * sp, FL: 17 * sp, melt: m, gear };
         }
-        const out = icarus(p, gear, head);
+        const out = icarus(p, gear, HEAD);
         if (out.wing) {
           wingInfo = out.wing;
           if (out.wing.shown < lastShown) {
@@ -1012,7 +995,7 @@
         flushActors();
         drawParts(['drip', 'feather', 'speed', 'spark']);
       } else {
-        // splash: rings on the surface, the broken frame floating
+        // splash: rings on the water, the broken frame floating
         const st = pt;
         for (let r = 0; r < 3; r++) {
           const rr = 4 + (st - r * 0.25) * 28;
@@ -1026,27 +1009,9 @@
         for (let i = 0; i < 9; i++) px(splashX - 10 + i, splashY + 2 + bob + (i > 4 ? 1 : 0), COL.strut);
         for (let i = 0; i < 7; i++) px(splashX + 4 + i, splashY + 3 - bob, COL.strut);
         drawParts(['splash', 'feather']);
-        const peak = baseFt(chapter) + target;
-        if (st > 0.5 && st < 2.9) dialog([fmt(peak) + ' FT. ' + (attempt === 1 ? 'A FIRST FLIGHT.' : 'HIGHER THAN EVER.'), 'CHANGE SOMETHING. TRY AGAIN.']);
-        fade((st - 2.1) / 1.0);
+        fade((st - 1.2) / 1.0);
       }
-
-      if (phase === 'melt' && pt > 0.3 && pt < 2.7) dialog(['THE WAX IS MELTING!']);
-      if (phase === 'ascend') {
-        if (pt > 0.2 && pt < 2.4) dialog(['THE WAX HOLDS!', 'INTO ' + T.goal + '.']);
-        fade((pt - 2.6) / 1.1, COL.white);
-      }
-      if (phase !== 'splash' && phase !== 'ascend') {
-        const l1 = 'ALT ' + fmt(baseFt(chapter) + A) + ' FT', l2 = tierName(A / G, T);
-        const bw = Math.max(textW(l1), textW(l2)) + 14;
-        box(6, 6, bw, 30);
-        text(l1, 13, 11); text(l2, 13, 22);
-      }
-      if (tAll - newHeightAt < 1.8) {
-        const tw = textW('NEW HEIGHT!', 2);
-        box(Math.round((W - tw) / 2) - 10, 42, tw + 20, 26);
-        text('NEW HEIGHT!', Math.round((W - tw) / 2), 48, 2);
-      }
+      if (phase === 'ascend') fade((pt - 2.4) / 1.1, COL.white);
     }
 
     // ---------- loop ----------
