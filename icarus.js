@@ -252,7 +252,7 @@
     const frame = new Uint32Array(img.data.buffer);
 
     const bar = document.createElement('div');
-    bar.style.cssText = 'position:absolute;right:8px;bottom:8px;display:flex;gap:6px';
+    bar.style.cssText = 'position:absolute;left:8px;top:8px;display:flex;gap:6px';
     const mkBtn = (label) => {
       const b = document.createElement('button');
       b.type = 'button';
