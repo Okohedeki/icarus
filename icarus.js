@@ -1,10 +1,13 @@
 /*
- * Black Icarus: a pixel-art loop in the style of 16-bit console RPGs.
- * He builds wings in his workshop, flies at the sun, the wax melts, he falls,
- * and he builds again. Everything is drawn in code: no image files, no models.
+ * Icarus: a pixel-art loop in the style of 16-bit console RPGs.
+ * He builds wings, flies at the sun, the wax melts, he falls, and he changes
+ * something and tries again. Every attempt flies higher than the last. On the
+ * fifth attempt of a chapter the wax holds, he flies into the sun, and wakes in
+ * a new workshop on the far side, aiming for the next star. It never ends.
+ * Everything is drawn in code: no image files, no models.
  *
- * Embed:  <div data-black-icarus></div><script src="icarus.js"></script>
- * Debug:  ?t=12.5 freezes the loop at 12.5 seconds.
+ * Embed:  <div data-icarus></div><script src="icarus.js"></script>
+ * Debug:  ?t=12.5 freezes the story at 12.5 seconds.
  */
 (function () {
   'use strict';
@@ -28,25 +31,36 @@
     h = Math.imul(h ^ (h >>> 13), 1274126177);
     return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
   }
+  const fmt = (n) => String(Math.max(0, Math.round(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  function roman(n) {
+    const R = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+    let s = '';
+    for (const [v, r] of R) while (n >= v) { s += r; n -= v; }
+    return s;
+  }
 
   // ---------- character palette (sprites and the rig use these letters) ----------
   const PAL = {
     k: '#140c12', // outline
     d: '#3b2215', s: '#5e3820', S: '#86532f', // skin: shadow, base, light
     h: '#161018', H: '#3d3040', // hair
-    w: '#efe8d6', W: '#a89eb6', // tunic
+    w: '#efe8d6', W: '#a89eb6', // suit
     g: '#eab53e', G: '#9a6818', // gold
-    b: '#5a3920', // sandals
+    b: '#5a3920', B: '#2e1c12', // sandals, boots
     f: '#fbf8f0', F: '#c4c7d8', q: '#7d84a0', // feathers
-    x: '#f6ca4a', X: '#b07c1c', // wax
+    x: '#f6ca4a', X: '#b07c1c', // wing frame
     r: '#7c4c26', R: '#4e2e16', // wood
     m: '#a3a9b6', M: '#59606e', // iron
     e: '#f4f0e8', // eye
+    c: '#6a4426', C: '#8c5c34', // leather cap
+    o: '#26283a', // smoked glass
+    p: '#a82838', P: '#6a1424', // cape
   };
   const KEYS = Object.keys(PAL);
   const AC = new Uint32Array(KEYS.length + 1);
   const AI = {};
   KEYS.forEach((k, i) => { AI[k] = i + 1; AC[i + 1] = hex(PAL[k]); });
+  const setPal = (k, h) => { AC[AI[k]] = hex(h); };
 
   // Head, facing right. The outline is added by the renderer.
   const HEAD = [
@@ -63,6 +77,20 @@
     '..hhsSSSSS..',
     '....sssss...',
   ];
+  const CAP = ['..cCcCcc....', '.cCccccCc...', 'cccCcccccc..', 'cCcccccccc..', 'cccccccccc..'];
+  const HELM = ['..GgGgGg....', '.GgggggGgg..', 'Gggggggggg..', 'gGgggggggggG', 'GgggggggggG.'];
+  function headFor(gear) {
+    const rows = HEAD.map((r) => r.split(''));
+    const top = gear.helmet ? HELM : gear.cap ? CAP : null;
+    if (top) for (let j = 0; j < 5; j++) for (let i = 0; i < 12; i++) if (top[j][i] !== '.') rows[j][i] = top[j][i];
+    if (gear.helmet) for (let j = 5; j < 9; j++) rows[j][3] = 'G';
+    else if (gear.cap) for (let j = 5; j < 9; j++) rows[j][3] = 'c';
+    if (gear.goggles) {
+      for (let i = 4; i < 11; i++) rows[5][i] = 'M';
+      for (let j = 6; j < 8; j++) for (let i = 7; i < 10; i++) rows[j][i] = 'o';
+    }
+    return rows.map((r) => r.join(''));
+  }
 
   // 5x7 bitmap font
   const FONT = {
@@ -84,20 +112,12 @@
     ':': [0, 12, 12, 0, 12, 12, 0], ' ': [0, 0, 0, 0, 0, 0, 0],
   };
 
-  // Sky ramp, deep to sun-hot
-  const SKY = ['#1b2462', '#263f8c', '#3a62b0', '#5f88cc', '#8fb0de', '#bfd2ea', '#f1dfb4', '#f6c46e', '#f29a45', '#fff2c4'].map(hex);
   const C = (h) => hex(h);
   const COL = {
     black: C('#08060c'), white: C('#f8f8f8'), shadow: C('#10123a'),
-    mortar: C('#2b2230'), stoneA: C('#4b3f4f'), stoneB: C('#45394a'), stoneC: C('#514456'), stoneHi: C('#61536a'),
-    archA: C('#7a6a7c'), archB: C('#695a6c'),
-    floorTop: C('#8a5a34'), plank: C('#6a4226'), plankB: C('#623c22'), seam: C('#43281a'), plankLit: C('#97663c'), plankLitB: C('#8a5c36'),
-    seaFoam: C('#cfe6fa'), seaHi: C('#7fb2e0'), seaA: C('#2f63a6'), seaB: C('#244f8e'), seaC: C('#1b3c74'), seaWave: C('#5e98d2'), glint: C('#f8e3a0'),
-    island: C('#3c4f7c'), islandHi: C('#4e6596'),
     cloudL: C('#f2f4fb'), cloudS: C('#b6c0dc'), cloudWL: C('#fde7c2'), cloudWS: C('#e2a874'),
-    sunCore: C('#fffbe6'), sunRing: C('#ffe58a'),
     rock: C('#3a3446'), rockHi: C('#544b62'), rockLo: C('#2a2534'),
-    towerA: C('#8c8296'), towerB: C('#6c6378'), doorGlow: C('#f2b04c'),
+    towerA: C('#8c8296'), towerB: C('#6c6378'), doorGlow: C('#f2b04c'), mortar: C('#2b2230'),
     wood: C('#7c4c26'), woodHi: C('#9a6634'), woodLo: C('#4e2e16'),
     iron: C('#3a3038'), ironHi: C('#5a4e58'), pot: C('#2a2228'),
     flameA: C('#fff0a8'), flameB: C('#f6b03c'), flameC: C('#d8602a'),
@@ -106,10 +126,82 @@
     vase: C('#b0552c'), vaseLo: C('#7a3418'), jar: C('#9a8a70'),
     candle: C('#ece4cc'), holder: C('#8a8a96'),
     feather: C('#fbf8f0'), featherLo: C('#7d84a0'), strut: C('#b07c1c'),
-    splashA: C('#e8f4ff'), splashB: C('#9cc8ec'), speed: C('#e8f0ff'),
+    speed: C('#e8f0ff'),
     winTop: C('#3848b8'), winBot: C('#141c78'), winEdge: C('#9098d0'),
     heap: C('#b9bccb'), heapLo: C('#6d7389'),
   };
+
+  // ---------- the worlds: each chapter's workshop and sky ----------
+  const THEMES = [
+    {
+      goal: 'THE SUN', place: 'THE CLIFF WORKSHOP',
+      wall: ['#4b3f4f', '#45394a', '#514456', '#61536a', '#2b2230'], arch: ['#7a6a7c', '#695a6c'],
+      floor: ['#8a5a34', '#6a4226', '#623c22', '#43281a', '#97663c', '#8a5c36'],
+      sea: ['#7fb2e0', '#2f63a6', '#244f8e', '#1b3c74', '#5e98d2', '#f8e3a0'],
+      sun: ['#fffbe6', '#ffe58a'], space: 0, clouds: true, island: true,
+      ramp: ['#04030b', '#0b0a22', '#141542', '#1b2462', '#263f8c', '#3a62b0', '#5f88cc', '#8fb0de', '#bfd2ea', '#f1dfb4', '#f6c46e', '#f29a45', '#fff2c4'],
+    },
+    {
+      goal: 'THE BLUE STAR', place: 'A WORKSHOP ON THE SUN',
+      wall: ['#8a5a2a', '#7e5024', '#966432', '#b07a3c', '#4e2e14'], arch: ['#c8903e', '#b07a34'],
+      floor: ['#a85a28', '#7a3e1c', '#70381a', '#3e1c0c', '#a8602c', '#985628'],
+      sea: ['#fff2a0', '#f6b03c', '#e8782a', '#c04818', '#ffd870', '#fff8d8'],
+      sun: ['#eef6ff', '#9cc8ff'], space: 2.4, clouds: false, island: false,
+      ramp: ['#030208', '#08061a', '#0e0c2c', '#16143e', '#1e2258', '#283476', '#344c98', '#4a6cbc', '#6c94d8', '#9cbcec', '#c8dcf8', '#e6f0ff', '#f6faff'],
+    },
+    {
+      goal: 'THE VIOLET STAR', place: 'A WORKSHOP ON THE BLUE STAR',
+      wall: ['#3a3460', '#342e58', '#423a6c', '#56508a', '#1c1834'], arch: ['#6a64a8', '#5a5494'],
+      floor: ['#5a5084', '#3c3458', '#363050', '#1e1a30', '#544c80', '#4c4474'],
+      sea: ['#e8f0ff', '#9cb8f0', '#6a80d0', '#4a58a8', '#c8d8ff', '#ffffff'],
+      sun: ['#fbeeff', '#d0a8ff'], space: 3.0, clouds: false, island: false,
+      ramp: ['#050208', '#0e0618', '#180c2a', '#22123e', '#2e1a56', '#3c2470', '#4e3290', '#6644b0', '#8460cc', '#a884e0', '#c8a8f0', '#e2ccfa', '#f8eeff'],
+    },
+  ].map((t) => Object.assign({}, t, {
+    wall: t.wall.map(hex), arch: t.arch.map(hex), floor: t.floor.map(hex), sea: t.sea.map(hex), sun: t.sun.map(hex), ramp: t.ramp.map(hex),
+  }));
+  function themeFor(chapter) {
+    const t = THEMES[(chapter - 1) % THEMES.length];
+    if (chapter <= THEMES.length) return t;
+    return Object.assign({}, t, { goal: 'THE NEXT STAR', place: 'WORKSHOP ' + roman(chapter) });
+  }
+
+  // ---------- what he changes each attempt ----------
+  const APPROACH = [
+    'WAX. FEATHERS. THREAD.',
+    'MORE WAX ON EVERY JOINT.',
+    'LONGER FEATHERS. WIDER SPAN.',
+    'A LEATHER CAP TO KEEP THE HEAT OFF.',
+    'A LINEN SUIT, SOAKED IN SEAWATER.',
+    'A BRONZE FRAME INSTEAD OF WOOD.',
+    'GOGGLES OF SMOKED GLASS.',
+    'SILVER FEATHERS FROM THE TEMPLE.',
+    'A CAPE TO CATCH THE WIND.',
+    'GOLD LEAF ON THE WING TIPS.',
+    'BOOTS WITH STRAPS. NO MORE SANDALS.',
+    'A HELMET SHAPED LIKE A FALCON.',
+  ];
+  const SUITS = [['#efe8d6', '#a89eb6', 'CREAM'], ['#cfe0ec', '#7f97b4', 'SEA BLUE'], ['#e8d0a0', '#a88a58', 'SAND'], ['#d8c8ec', '#9484b4', 'LILAC'], ['#f0d0c8', '#b08888', 'ROSE']];
+  const FEATHERS = [['#fbf8f0', '#c4c7d8', '#7d84a0', 'THE CLIFF GULLS'], ['#eef4ff', '#a8b8d8', '#6878a0', 'THE TEMPLE DOVES'], ['#fff4d8', '#e0c890', '#a08850', 'THE DESERT HAWKS'], ['#f4ecff', '#c8b8e8', '#8878b0', 'THE NIGHT OWLS']];
+  function gearFor(n) {
+    const g = {
+      waxJoints: n >= 2, cap: n >= 4, bronze: n >= 6, goggles: n >= 7, cape: n >= 9, goldTips: n >= 10, boots: n >= 11, helmet: n >= 12,
+      span: 1 + 0.035 * Math.min(n - 1, 10) + (n >= 3 ? 0.06 : 0), nf: 8 + Math.min(n - 1, 6),
+      suit: n < 5 ? 0 : n < 13 ? 1 : (1 + Math.floor((n - 11) / 2)) % SUITS.length,
+      feathers: n < 8 ? 0 : n < 14 ? 1 : (1 + Math.floor((n - 12) / 2)) % FEATHERS.length,
+    };
+    return g;
+  }
+  function approach(n) {
+    if (n <= APPROACH.length) return APPROACH[n - 1];
+    const g = gearFor(n);
+    return (n - 13) % 2 === 0 ? 'A NEW SUIT, DYED ' + SUITS[g.suit][2] + '.' : 'FEATHERS FROM ' + FEATHERS[g.feathers][3] + '.';
+  }
+  function wearGear(g) {
+    setPal('w', SUITS[g.suit][0]); setPal('W', SUITS[g.suit][1]);
+    setPal('f', FEATHERS[g.feathers][0]); setPal('F', FEATHERS[g.feathers][1]); setPal('q', FEATHERS[g.feathers][2]);
+    if (g.bronze) { setPal('x', '#d0884a'); setPal('X', '#8a5420'); } else { setPal('x', PAL.x); setPal('X', PAL.X); }
+  }
 
   // ---------- the music (original, a minor-key march) ----------
   const NOTE = (n) => 440 * Math.pow(2, (n - 69) / 12);
@@ -123,13 +215,13 @@
   const BASS = ['A2', 'A2', 'F2', 'E2', 'A2', 'C2', 'D2', 'E2'];
 
   function mount(el) {
-    if (el.__blackIcarus) return el.__blackIcarus;
+    if (el.__icarus) return el.__icarus;
 
     // ---------- DOM ----------
     el.style.position = el.style.position || 'relative';
     const view = document.createElement('canvas');
     view.setAttribute('role', 'img');
-    view.setAttribute('aria-label', 'Pixel-art animation: Black Icarus builds wings in his workshop, flies toward the sun, the wax melts and he falls into the sea, then he builds new wings and flies again.');
+    view.setAttribute('aria-label', 'Pixel-art animation of Icarus. He builds wings, flies toward the sun, falls, changes his wings and clothes, and flies higher every time, until he reaches the sun and begins again from a new workshop.');
     view.style.cssText = 'display:block;width:100%;height:auto;aspect-ratio:16/9;image-rendering:pixelated;image-rendering:crisp-edges;background:#08060c;border-radius:inherit';
     el.appendChild(view);
     const vctx = view.getContext('2d');
@@ -230,12 +322,13 @@
     const dir = (a) => [Math.cos(a), Math.sin(a)];
 
     // A wing seen from the side. phi: 0 = raised, pi/2 = edge-on, >pi/2 = lowered.
-    function wing(root, back, tail, phi, L, FL, melt, far) {
+    function wing(root, back, tail, phi, w, far) {
+      const { L, FL, melt, gear } = w;
       const c = Math.cos(phi);
       const ex = back[0] * c * L + tail[0] * 0.32 * L, ey = back[1] * c * L + tail[1] * 0.32 * L;
       let fx = tail[0] + back[0] * c * 0.3, fy = tail[1] + back[1] * c * 0.3;
       const fl = Math.hypot(fx, fy) || 1; fx /= fl; fy /= fl;
-      const NF = 8;
+      const NF = gear.nf;
       let shown = 0;
       for (let i = NF; i >= 1; i--) {
         const t = i / NF;
@@ -244,8 +337,10 @@
         const bx = root[0] + ex * t, by = root[1] + ey * t;
         const len = FL * (0.35 + 0.65 * Math.pow(t, 0.8)) * (1 - 0.3 * melt);
         const odd = i & 1;
+        const tip = gear.goldTips && !far ? 'g' : far ? 'q' : 'F';
         capsule(bx, by, bx + fx * len, by + fy * len, 1.05, (u) =>
-          far ? (u > 0.7 ? 'q' : odd ? 'F' : 'q') : (u > 0.78 ? 'F' : odd ? 'f' : 'F'));
+          (u > 0.78 ? tip : far ? (odd ? 'F' : 'q') : odd ? 'f' : 'F'));
+        if (gear.waxJoints && !far && len > 2) capsule(bx, by, bx, by, 1.3, 'x');
       }
       capsule(root[0], root[1], root[0] + ex, root[1] + ey, 0.9, far ? 'X' : 'x');
       commit();
@@ -253,7 +348,7 @@
     }
 
     // The rig. Angles are screen radians (0 = right, pi/2 = down).
-    function icarus(p) {
+    function icarus(p, gear, head) {
       const dT = dir(p.t);
       const back = [dT[1], -dT[0]];
       const tail = [-dT[0], -dT[1]];
@@ -266,20 +361,26 @@
       const armF = limb(sh, p.aF, 5.5, 5.5), armB = limb(at(sh, back, 0.5), p.aB, 5.5, 5.5);
       const legF = limb(hip, p.lF, 6, 6), legB = limb(at(hip, back, 1.2), p.lB, 6, 6);
       const out = { hand: armF[1], sh, hip };
+      const wingRoot = at(at(sh, back, 2.5), dT, 0.5);
 
-      if (p.wings) {
-        const root = at(at(sh, back, 2.5), dT, 0.5);
-        const farRoot = at(at(root, back, -1.5), dT, 1);
-        wing(farRoot, back, tail, p.wings.phi + 0.18, p.wings.L, p.wings.FL, p.wings.melt, true);
+      if (gear.cape) {
+        const flutter = Math.sin(tAll * 9) * 1.5;
+        const cs = at(sh, back, 1.5);
+        for (let i = 0; i < 3; i++) {
+          const end = at(at(cs, tail, 13 + i * 1.5), back, 3 + i * 2.5 + flutter * (i + 1) * 0.5);
+          capsule(cs[0], cs[1], end[0], end[1], 2.1, (u) => (u > 0.75 ? 'P' : 'p'));
+        }
+        commit();
       }
+      if (p.wings) wing(at(at(wingRoot, back, -1.5), dT, 1), back, tail, p.wings.phi + 0.18, p.wings, true);
       capsule(sh[0] + back[0] * 0.5, sh[1] + back[1] * 0.5, armB[0][0], armB[0][1], 1.3, 's');
       capsule(armB[0][0], armB[0][1], armB[1][0], armB[1][1], 1.3, 's');
       commit();
       capsule(hip[0] + back[0], hip[1] + back[1], legB[0][0], legB[0][1], 1.4, 'd');
       capsule(legB[0][0], legB[0][1], legB[1][0], legB[1][1], 1.4, 'd');
-      foot(legB[1], p.lB[1], 'b');
+      boot(legB, p.lB[1], gear);
       commit();
-      // torso with a short skirt below the hip
+      // suit, with a short skirt below the hip
       const sk = at(hip, tail, 3.5);
       capsule(sk[0], sk[1], neck[0], neck[1], 4.1, (u, ex, ey) => {
         const side = ex * back[0] + ey * back[1];
@@ -289,15 +390,12 @@
       commit();
       capsule(hip[0], hip[1], legF[0][0], legF[0][1], 1.4, 's');
       capsule(legF[0][0], legF[0][1], legF[1][0], legF[1][1], 1.4, 's');
-      foot(legF[1], p.lF[1], 'b');
+      boot(legF, p.lF[1], gear);
       commit();
       const q = p.headQ != null ? p.headQ : mod(Math.round((p.t + Math.PI / 2) / (Math.PI / 2)), 4);
-      sprite(HEAD, headC[0], headC[1], q);
+      sprite(head, headC[0], headC[1], q);
       commit();
-      if (p.wings) {
-        const root = at(at(sh, back, 2.5), dT, 0.5);
-        out.wing = wing(root, back, tail, p.wings.phi, p.wings.L, p.wings.FL, p.wings.melt, false);
-      }
+      if (p.wings) out.wing = wing(wingRoot, back, tail, p.wings.phi, p.wings, false);
       capsule(sh[0], sh[1], armF[0][0], armF[0][1], 1.3, 'S');
       capsule(armF[0][0], armF[0][1], armF[1][0], armF[1][1], 1.3, 'S');
       if (p.hammer) {
@@ -313,9 +411,14 @@
       commit();
       return out;
     }
-    function foot(f, a, c) {
+    function boot(leg, a, gear) {
+      const f = leg[1];
       const fwd = Math.cos(a) >= -0.2 ? 1 : -1;
-      capsule(f[0], f[1], f[0] + 2.5 * fwd, f[1], 1.1, c);
+      if (gear.boots) {
+        const k = leg[0], d = [f[0] - k[0], f[1] - k[1]], L = Math.hypot(d[0], d[1]) || 1;
+        capsule(f[0] - (d[0] / L) * 3.5, f[1] - (d[1] / L) * 3.5, f[0], f[1], 1.6, 'B');
+        capsule(f[0], f[1], f[0] + 2.8 * fwd, f[1], 1.3, 'B');
+      } else capsule(f[0], f[1], f[0] + 2.5 * fwd, f[1], 1.1, 'b');
     }
 
     // ---------- pose library ----------
@@ -324,39 +427,41 @@
       return { x, y, t: -DOWN, aF: [DOWN - 0.15, DOWN - 0.3], aB: [DOWN + 0.25, DOWN + 0.1], lF: [DOWN - 0.1, DOWN + 0.02], lB: [DOWN + 0.12, DOWN] };
     }
 
-    // ---------- the workshop, drawn once ----------
-    const ws = new Uint32Array(W * H);
-    (function buildWorkshop() {
+    // ---------- a workshop for each world, drawn once ----------
+    const wsCache = new Map();
+    function workshopFor(T) {
+      if (wsCache.has(T)) return wsCache.get(T);
+      const ws = new Uint32Array(W * H);
+      wsCache.set(T, ws);
       const set = (x, y, c) => { if (x >= 0 && y >= 0 && x < W && y < H) ws[y * W + x] = c; };
       const fill = (x, y, w, h, c) => { for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) set(i, j, c); };
-      // stone wall
+      const [stA, stB, stC, stHi, mor] = T.wall;
       for (let y = 0; y < 110; y++) {
         const row = (y / 8) | 0, off = (row & 1) * 8;
         for (let x = 0; x < W; x++) {
           const bx = ((x + off) / 16) | 0;
           const lx = (x + off) % 16, ly = y % 8;
           let c;
-          if (ly === 7 || lx === 15) c = COL.mortar;
+          if (ly === 7 || lx === 15) c = mor;
           else {
             const r = hash(bx, row);
-            c = r < 0.33 ? COL.stoneA : r < 0.66 ? COL.stoneB : COL.stoneC;
-            if (ly === 0 || lx === 0) c = COL.stoneHi;
-            if (hash(x, y) < 0.04) c = COL.mortar;
+            c = r < 0.33 ? stA : r < 0.66 ? stB : stC;
+            if (ly === 0 || lx === 0) c = stHi;
+            if (hash(x, y) < 0.04) c = mor;
           }
           set(x, y, c);
         }
       }
-      // floor
+      const [fTop, plank, plankB, seam, lit, litB] = T.floor;
       for (let y = 110; y < H; y++) for (let x = 0; x < W; x++) {
         const row = ((y - 111) / 6) | 0;
         const seamX = mod(x + row * 13, 34) === 0;
-        let c = y === 110 ? COL.floorTop : (y - 111) % 6 === 5 || seamX ? COL.seam : hash(x >> 3, row) < 0.5 ? COL.plank : COL.plankB;
-        // sunbeam from the doorway
+        let c = y === 110 ? fTop : (y - 111) % 6 === 5 || seamX ? seam : hash(x >> 3, row) < 0.5 ? plank : plankB;
         const beamL = 150 - (y - 110) * 1.2, beamR = 200 - (y - 110) * 0.4;
-        if (y > 110 && x > beamL && x < beamR && dith(x, y) < 0.6 && c !== COL.seam) c = c === COL.plank ? COL.plankLit : COL.plankLitB;
+        if (y > 110 && x > beamL && x < beamR && dith(x, y) < 0.6 && c !== seam) c = c === plank ? lit : litB;
         set(x, y, c);
       }
-      // doorway to the balcony, with the sea outside
+      // the doorway, looking out at the next goal
       const dx0 = 196, dx1 = 246, cx = 221, cy = 50, R = 25;
       for (let y = 20; y < 110; y++) for (let x = dx0 - 3; x <= dx1 + 3; x++) {
         const inArch = (y >= cy ? x >= dx0 && x <= dx1 : (x - cx) ** 2 + (y - cy) ** 2 <= R * R);
@@ -365,28 +470,26 @@
           let c;
           if (y >= 86) {
             const d = y - 86;
-            c = d === 0 ? COL.seaHi : d < 5 ? COL.seaA : d < 12 ? COL.seaB : COL.seaC;
-            if (d > 1 && mod(x * 3 + y * 7, 23) < 2) c = COL.seaWave;
-            if (Math.abs(x - 234) < 4 && d > 0 && (x + y) % 3 === 0) c = COL.glint;
+            c = d === 0 ? T.sea[0] : d < 5 ? T.sea[1] : d < 12 ? T.sea[2] : T.sea[3];
+            if (d > 1 && mod(x * 3 + y * 7, 23) < 2) c = T.sea[4];
+            if (Math.abs(x - 234) < 4 && d > 0 && (x + y) % 3 === 0) c = T.sea[5];
           } else {
-            const v = 2.2 + (y - 22) / 64 * 4.2;
             const sd = Math.hypot(x - 234, y - 74);
-            let vv = v + 2.6 * Math.exp(-sd / 10);
-            const i = clamp(Math.floor(vv) + ((vv % 1) > dith(x, y) ? 1 : 0), 0, 9);
-            c = SKY[i];
-            if (sd < 5) c = COL.sunCore;
-            if (y > 78 && y < 86 && x > 200 && x < 222 && y > 86 - (8 - Math.abs(x - 211) * 0.7)) c = y < 82 ? COL.islandHi : COL.island;
+            const vv = 5.2 + ((y - 22) / 64) * 4.2 - T.space + 2.6 * Math.exp(-sd / 10);
+            c = T.ramp[clamp(Math.floor(vv) + ((vv % 1) > dith(x, y) ? 1 : 0), 0, 12)];
+            if (T.space && vv < 6 && hash(x, y) < 0.025) c = COL.white;
+            if (sd < 5) c = T.sun[0];
+            if (T.island && y > 78 && y < 86 && x > 200 && x < 222 && y > 86 - (8 - Math.abs(x - 211) * 0.7)) c = y < 82 ? hex('#4e6596') : hex('#3c4f7c');
           }
           set(x, y, c);
         } else if (inRing && y < 110) {
           const blk = y >= cy ? ((y / 6) | 0) : ((Math.atan2(y - cy, x - cx) * 6) | 0);
-          set(x, y, hash(blk, 7) < 0.5 ? COL.archA : COL.archB);
+          set(x, y, hash(blk, 7) < 0.5 ? T.arch[0] : T.arch[1]);
         }
       }
       // shelf with pottery
       fill(8, 36, 58, 2, COL.wood); fill(8, 36, 58, 1, COL.woodHi); fill(8, 38, 58, 1, COL.woodLo);
       fill(12, 38, 2, 4, COL.woodLo); fill(60, 38, 2, 4, COL.woodLo);
-      // amphora
       const vase = (x0, w, h, c, lo) => {
         for (let j = 0; j < h; j++) {
           const t = j / h; const half = Math.round((w / 2) * Math.sin(Math.PI * (0.15 + 0.8 * t)));
@@ -399,14 +502,13 @@
       fill(38, 31, 8, 4, COL.parch); fill(38, 31, 1, 4, COL.parchLine); fill(45, 31, 1, 4, COL.parchLine);
       vase(54, 6, 12, COL.vase, COL.vaseLo); fill(51, 27, 7, 1, COL.black); fill(51, 30, 7, 1, COL.black);
       // wing sketches pinned to the wall
-      fill(118, 30, 22, 16, COL.parch);
-      for (let i = 0; i < 6; i++) { set(122 + i * 2, 41 - i, COL.parchLine); set(123 + i * 2, 41 - i, COL.parchLine); }
-      for (let i = 0; i < 5; i++) for (let j = 0; j < 4; j++) set(124 + i * 2, 42 - i + j, COL.parchLine);
-      set(129, 30, COL.vase);
+      fill(110, 30, 22, 16, COL.parch);
+      for (let i = 0; i < 6; i++) { set(114 + i * 2, 41 - i, COL.parchLine); set(115 + i * 2, 41 - i, COL.parchLine); }
+      for (let i = 0; i < 5; i++) for (let j = 0; j < 4; j++) set(116 + i * 2, 42 - i + j, COL.parchLine);
+      set(121, 30, COL.vase);
       // hanging tools
-      fill(76, 44, 14, 3, COL.ironHi); for (let i = 0; i < 14; i += 2) set(76 + i, 47, COL.iron); fill(90, 43, 4, 5, COL.wood);
-      fill(100, 42, 1, 12, COL.iron); fill(103, 42, 1, 12, COL.iron); fill(100, 42, 4, 1, COL.ironHi);
-      for (let a = 0; a < TAU; a += 0.2) set(Math.round(108 + 3 * Math.cos(a)), Math.round(50 + 3 * Math.sin(a)), COL.parch);
+      fill(72, 44, 14, 3, COL.ironHi); for (let i = 0; i < 14; i += 2) set(72 + i, 47, COL.iron); fill(86, 43, 4, 5, COL.wood);
+      fill(94, 42, 1, 12, COL.iron); fill(97, 42, 1, 12, COL.iron); fill(94, 42, 4, 1, COL.ironHi);
       // brazier and wax pot
       fill(6, 98, 20, 4, COL.iron); fill(6, 98, 20, 1, COL.ironHi); fill(8, 102, 2, 8, COL.iron); fill(22, 102, 2, 8, COL.iron);
       fill(9, 86, 14, 9, COL.pot); fill(8, 86, 16, 1, COL.ironHi); fill(9, 86, 14, 1, COL.wax); fill(10, 87, 12, 1, COL.waxLo);
@@ -415,83 +517,91 @@
       for (let i = 0; i < 9; i++) { const fx = 31 + ((i * 7) % 14), fy = 95 + ((i * 5) % 5); fill(fx, fy, 2, 5, COL.feather); set(fx, fy + 4, COL.featherLo); }
       // candle sconce
       fill(166, 56, 7, 2, COL.holder); fill(168, 49, 3, 7, COL.candle);
-    })();
+      return ws;
+    }
 
     // ---------- scene drawing ----------
     let tAll = 0; // seconds since start
-    function drawWorkshop(attempt) {
-      frame.set(ws);
-      // fire under the pot
+    function drawWorkshop(T, failedHere) {
+      frame.set(workshopFor(T));
       for (let i = 0; i < 9; i++) {
         const h = 2 + ((hash(i, (tAll * 12) | 0) * 3) | 0);
         for (let j = 0; j < h; j++) px(10 + i * 1.4, 97 - j, j === h - 1 ? COL.flameA : j > 0 ? COL.flameB : COL.flameC);
       }
-      // wax bubbles
       for (let i = 0; i < 3; i++) if (hash(i, (tAll * 4) | 0) < 0.5) px(11 + i * 4, 85, COL.wax);
-      // candle flame
       const fl = hash(1, (tAll * 10) | 0) < 0.5 ? 0 : 1;
       px(169, 47 - fl, COL.flameB); px(169, 48, COL.flameA); px(170, 48, COL.flameB); px(169, 46 - fl, COL.flameA);
-      // tally of past attempts
-      const marks = attempt - 1;
-      for (let m = 0; m < marks; m++) {
-        const g = (m / 5) | 0, k = m % 5, row = (g / 4) | 0, col = g % 4;
-        const x0 = 142 + col * 12, y0 = 14 + row * 10;
-        if (k < 4) for (let j = 0; j < 6; j++) px(x0 + k * 2, y0 + j, COL.chalk);
-        else for (let j = 0; j < 8; j++) px(x0 - 1 + j, y0 + 5 - (j * 0.7) | 0, COL.chalk);
+      // chalk chart of every flight so far: each bar taller than the last
+      const hist = history.slice(-11);
+      if (hist.length) {
+        const lo = Math.log(hist[0] + 1), hi = Math.log(hist[hist.length - 1] + 1);
+        const x0 = 140, base = 34;
+        for (let i = 0; i < hist.length; i++) {
+          const f = hi > lo ? (Math.log(hist[i] + 1) - lo) / (hi - lo) : 1;
+          const hgt = Math.round(4 + f * 18);
+          for (let j = 0; j < hgt; j++) { px(x0 + i * 4, base - j, COL.chalk); px(x0 + i * 4 + 1, base - j, COL.chalk); }
+        }
+        for (let i = -2; i < hist.length * 4; i++) px(x0 + i, base + 1, COL.chalk);
+        for (let j = 0; j < 24; j++) px(x0 - 2, base - j, COL.chalk);
       }
-      // the heap of melted wings
-      const heaps = Math.min(marks, 10);
-      for (let h = 0; h < heaps; h++) {
+      // the wings that melted in this workshop
+      for (let h = 0; h < Math.min(failedHere, 10); h++) {
         const hx = 150 + ((h * 11) % 36), hy = 109 - ((h / 4) | 0) * 2;
-        for (let i = 0; i < 6; i++) { px(hx + i, hy - (i % 3 === 1 ? 1 : 0), i % 2 ? COL.heap : COL.heapLo); }
+        for (let i = 0; i < 6; i++) px(hx + i, hy - (i % 3 === 1 ? 1 : 0), i % 2 ? COL.heap : COL.heapLo);
         for (let i = 0; i < 7; i++) px(hx - 2 + i, hy - 2 - (i >> 1), COL.strut);
       }
-      // dust in the sunbeam
       for (let i = 0; i < 10; i++) {
         const dx = 150 + mod(i * 37 + tAll * 3, 50), dy = 40 + mod(i * 23 - tAll * 2, 70);
         if (hash(i, (tAll * 2) | 0) < 0.7) px(dx + (dy - 40) * 0.3, dy, COL.chalk);
       }
     }
 
-    function drawRack(progress) {
-      // A-frame stand
+    function drawRack(progress, gear) {
       capsule(86, 110, 98, 74, 1, 'r'); capsule(114, 110, 104, 74, 1, 'R');
       capsule(90, 94, 110, 94, 0.8, 'r');
       commit();
       if (progress < 0) return;
-      // the wing being built, laid on the stand
-      const root = [112.5, 75.5], ex = -30, ey = -14;
-      const NF = 8, shown = Math.floor(progress * (NF + 0.99));
+      const sp = gear.span, NF = gear.nf;
+      const root = [112.5, 75.5], ex = -30 * sp, ey = -14 * sp;
+      const shown = Math.floor(progress * (NF + 0.99));
       for (let i = NF; i >= 1; i--) {
         if (i > shown) continue;
         const t = i / NF, bx = root[0] + ex * t, by = root[1] + ey * t;
-        const len = 18 * (0.35 + 0.65 * Math.pow(t, 0.8));
-        const odd = i & 1;
-        capsule(bx, by, bx + 0.25 * len, by + len, 1.05, (u) => (u > 0.78 ? 'F' : odd ? 'f' : 'F'));
+        const len = 18 * sp * (0.35 + 0.65 * Math.pow(t, 0.8));
+        const odd = i & 1, tip = gear.goldTips ? 'g' : 'F';
+        capsule(bx, by, bx + 0.25 * len, by + len, 1.05, (u) => (u > 0.78 ? tip : odd ? 'f' : 'F'));
+        if (gear.waxJoints) capsule(bx, by, bx, by, 1.3, 'x');
       }
       capsule(root[0], root[1], root[0] + ex, root[1] + ey, 0.9, 'x');
       commit();
     }
 
-    function sky(alt, sunX, sunY, R, heat) {
-      const glowR = 12 + 34 * alt, glowK = 2 + 5 * alt;
+    // h: how far toward the goal (0..1). s: how close to the star (0..1+).
+    function sky(T, h, s, starShift, sunX, sunY, R) {
+      const glowR = 12 + 34 * s, glowK = 2 + 5 * s;
+      const starP = Math.max(T.space ? 0.012 : 0, h > 0.6 ? (h - 0.6) * 0.04 : 0);
       for (let y = 0; y < H; y++) {
-        let base = 0.6 + (y / H) * 3.4 - alt * 0.9;
-        if (y > 70) base += ((y - 70) / 60) * 2.2 * clamp(1 - alt * 1.4, 0, 1);
+        let base = 3.6 + (y / H) * (3.4 - 1.6 * h) - h * 3.0 - s * 0.6 - T.space;
+        if (T.island && y > 70) base += ((y - 70) / 60) * 2.2 * clamp(1 - h * 4, 0, 1);
+        const sy = mod(Math.floor(y - starShift), 4096);
         for (let x = 0; x < W; x++) {
           const d = Math.hypot(x - sunX, y - sunY);
           let c;
-          if (d < R - 2) c = COL.sunCore;
-          else if (d < R) c = dith(x, y) < 0.6 ? COL.sunRing : COL.sunCore;
+          if (d < R - 2) c = T.sun[0];
+          else if (d < R) c = dith(x, y) < 0.6 ? T.sun[1] : T.sun[0];
           else {
             let v = base + glowK * Math.exp(-(d - R) / glowR);
-            if (alt > 0.5 && d < R + 34 * alt) {
+            if (s > 0.5 && d < R + 34 * s) {
               const a = Math.atan2(y - sunY, x - sunX) + tAll * 0.25;
               if (Math.abs(mod(a * 6, TAU) - Math.PI) < 0.35 && dith(x, y) < 0.5) v += 1;
             }
-            v = clamp(v, 0, 8.6);
+            v = clamp(v, 0, 11.6);
             const i = Math.floor(v) + ((v % 1) > dith(x, y) ? 1 : 0);
-            c = SKY[clamp(i, 0, 9)];
+            c = T.ramp[clamp(i, 0, 12)];
+            if (starP && v < 5) {
+              const r = hash(x, sy);
+              if (r < starP) c = r < starP * 0.3 && hash(x, sy + ((tAll * 3) | 0)) < 0.8 ? COL.white : COL.chalk;
+            }
           }
           frame[y * W + x] = c;
         }
@@ -509,20 +619,19 @@
         px(x, y, y > cy + 3 * s ? S : y > cy + 1 * s && dith(x, y) < 0.5 ? S : L);
       }
     }
-    function sea(top, sunX) {
+    function sea(T, top, sunX) {
       const y0 = Math.max(0, Math.ceil(top));
       for (let y = y0; y < H; y++) {
         const d = y - top;
         for (let x = 0; x < W; x++) {
-          let c = d < 1 ? COL.seaHi : d < 6 ? COL.seaA : d < 16 ? COL.seaB : COL.seaC;
-          if (d > 1 && mod(x * 3 + y * 7 + ((tAll * 14) | 0) * (y & 1 ? 2 : -2), 37) < 3) c = COL.seaWave;
-          if (Math.abs(x - sunX) < 9 - d * 0.12 && d > 0 && mod(x + y + ((tAll * 8) | 0), 4) === 0) c = COL.glint;
+          let c = d < 1 ? T.sea[0] : d < 6 ? T.sea[1] : d < 16 ? T.sea[2] : T.sea[3];
+          if (d > 1 && mod(x * 3 + y * 7 + ((tAll * 14) | 0) * (y & 1 ? 2 : -2), 37) < 3) c = T.sea[4];
+          if (Math.abs(x - sunX) < 9 - d * 0.12 && d > 0 && mod(x + y + ((tAll * 8) | 0), 4) === 0) c = T.sea[5];
           frame[y * W + x] = c;
         }
       }
     }
     function cliff(x0, seaTop) {
-      // rock rising from the sea with the workshop tower on top
       const top = seaTop - 44;
       for (let y = Math.max(0, Math.floor(top)); y < Math.min(H, seaTop + 2); y++) {
         const t = (y - top) / 44;
@@ -568,6 +677,13 @@
       box(8, y, W - 16, h);
       lines.forEach((l, i) => text(l, 16, y + 7 + i * 10, 1));
     }
+    function title(big, small) {
+      const tw = textW(big, 2), sw = small ? textW(small) : 0;
+      const w = Math.max(tw, sw) + 24, x = Math.round((W - w) / 2);
+      box(x, 10, w, small ? 42 : 30);
+      text(big, Math.round((W - tw) / 2), 18, 2);
+      if (small) text(small, Math.round((W - sw) / 2), 38);
+    }
     function fade(amount, color) {
       if (amount <= 0) return;
       const c = color || COL.black;
@@ -594,24 +710,62 @@
     }
 
     // ---------- the story ----------
-    const PH = [['build', 5.6], ['equip', 1.7], ['run', 1.9], ['fly', 7.0], ['melt', 3.0], ['fall', 2.6], ['splash', 2.8]];
-    const LOOP = PH.reduce((s, p) => s + p[1], 0);
-    let attempt = 1, phase = 0, pt = 0, lastHit = false, lastShown = 8, fallStart = null;
+    // Each chapter has K attempts. Each flies higher; the last reaches the star.
+    const K = 5;
+    const FRAC = [0.14, 0.32, 0.52, 0.76, 1];
+    const goalFt = (c) => Math.round((10000 * Math.pow(2.4, c - 1)) / 100) * 100;
+    const baseFt = (c) => { let b = 0; for (let i = 1; i < c; i++) b += goalFt(i); return b; };
+    const DUR = { build: 5.6, equip: 1.7, run: 1.9, melt: 3.0, fall: 2.6, splash: 3.2, ascend: 3.8 };
+    const flyDur = () => 6.5 + k * 0.5;
+    const dur = (name) => (name === 'fly' ? flyDur() : DUR[name]);
+    let chapter = 1, k = 1, attempt = 1, phase = 'build', pt = 0;
+    let fromSun = false, lastHit = false, lastA = 0, newHeightAt = -99, best = 0;
+    let history = [];
+    let gear = gearFor(1), head = headFor(gear), lastShown = gear.nf;
+
+    const TIERS = [[0, 'LIFTOFF'], [0.15, 'CLIMBING'], [0.45, 'HALFWAY THERE'], [0.7, 'ALMOST THERE'], [0.97, 'AT ']];
+    const tierName = (f, T) => { const t = TIERS.filter((x) => f >= x[0]).pop()[1]; return t === 'AT ' ? 'AT ' + T.goal : t; };
+
+    // Where he is in the sky right now (local feet within this chapter)
+    function flight() {
+      const G = goalFt(chapter), target = G * FRAC[k - 1];
+      const kpx = Math.min(0.05, 120 / target); // screen pixels per foot, per attempt
+      let A, s, icX, icY;
+      if (phase === 'fly') {
+        const f = pt / flyDur(), e = smooth(f);
+        A = target * (0.5 * f + 0.5 * e);
+        icX = lerp(40, 128, e); icY = lerp(86, 60, e) + Math.sin(tAll * TAU * 2) * 1.5;
+      } else if (phase === 'melt') {
+        const m = pt / 3;
+        A = target * (1 + 0.02 * m);
+        icX = 128 + 12 * m; icY = 60 - 4 * m + Math.sin(tAll * 40) * m * 1.2;
+      } else if (phase === 'fall') {
+        const f = pt / 2.6;
+        A = target * 1.02 * (1 - Math.pow(f, 1.7));
+        icX = 140 + 10 * f; icY = 56 + 42 * f;
+      } else if (phase === 'ascend') {
+        const a = smooth(pt / 2.6);
+        A = G * (1 + 0.04 * a);
+        icX = lerp(128, 200, a); icY = lerp(60, 34, a) + Math.sin(tAll * TAU * 2) * 1.5;
+      } else { A = 0; icX = splashX; icY = 200; }
+      s = A / G;
+      return { A, s, icX, icY, kpx, target, G };
+    }
 
     // Sound
     let audio = null, soundOn = false, nextNote = 0, noteIdx = 0, bassIdx = 0, nextBass = 0;
-    const STEP = 60 / 132 / 2; // eighth notes at 132 bpm
-    function tone(freq, start, dur, type, vol) {
+    const STEP = 60 / 132 / 2;
+    function tone(freq, start, dur_, type, vol) {
       const o = audio.createOscillator(), g = audio.createGain();
       o.type = type; o.frequency.value = freq;
       g.gain.setValueAtTime(0, start);
       g.gain.linearRampToValueAtTime(vol, start + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0008, start + dur);
+      g.gain.exponentialRampToValueAtTime(0.0008, start + dur_);
       o.connect(g).connect(audio.destination);
-      o.start(start); o.stop(start + dur + 0.02);
+      o.start(start); o.stop(start + dur_ + 0.02);
     }
-    function noise(start, dur, vol, cutoff) {
-      const b = audio.createBuffer(1, Math.ceil(audio.sampleRate * dur), audio.sampleRate);
+    function noise(start, dur_, vol, cutoff) {
+      const b = audio.createBuffer(1, Math.ceil(audio.sampleRate * dur_), audio.sampleRate);
       const d = b.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
       const s = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain();
@@ -625,6 +779,8 @@
       if (kind === 'whoosh') noise(t, 0.5, 0.25, 900);
       if (kind === 'splash') { noise(t, 0.9, 0.5, 1600); tone(110, t, 0.3, 'triangle', 0.15); }
       if (kind === 'drip') tone(1320 + Math.random() * 400, t, 0.05, 'triangle', 0.03);
+      if (kind === 'best') [0, 4, 7, 12].forEach((n, i) => tone(NOTE(76 + n), t + i * 0.07, 0.18, 'square', 0.04));
+      if (kind === 'triumph') [0, 4, 7, 12, 16, 19, 24].forEach((n, i) => tone(NOTE(69 + n), t + i * 0.11, 0.4, 'square', 0.05));
     }
     function scheduleMusic() {
       if (!soundOn || !audio) return;
@@ -650,11 +806,55 @@
       }
     });
 
+    let wingInfo = null, splashX = 150, splashY = 96, hammerAt = [84, 92];
+
+    function nextPhase() {
+      switch (phase) {
+        case 'build': return 'equip';
+        case 'equip': return 'run';
+        case 'run': return 'fly';
+        case 'fly': return k === K ? 'ascend' : 'melt';
+        case 'melt': return 'fall';
+        case 'fall': return 'splash';
+        default: return 'build';
+      }
+    }
+    function enter(next) {
+      const prev = phase;
+      phase = next;
+      if (next === 'splash' || next === 'ascend') {
+        const peak = baseFt(chapter) + goalFt(chapter) * FRAC[k - 1];
+        best = Math.max(best, peak);
+        history.push(peak);
+      }
+      if (next === 'splash') {
+        const T = themeFor(chapter);
+        for (let i = 0; i < 46; i++) spawn({ k: 'splash', x: splashX + (Math.random() - 0.5) * 8, y: splashY, vx: (Math.random() - 0.5) * 90, vy: -50 - Math.random() * 110, g: 240, life: 1.4, c: i % 3 ? T.sea[0] : T.sea[4] });
+        sfx('splash');
+      }
+      if (next === 'ascend') sfx('triumph');
+      if (next === 'build') {
+        attempt++;
+        if (prev === 'ascend') { chapter++; k = 1; fromSun = true; } else { k++; fromSun = false; }
+        parts = []; lastA = 0;
+        gear = gearFor(attempt); head = headFor(gear); lastShown = gear.nf;
+      }
+    }
+
     function update(dt) {
       tAll += dt; pt += dt;
-      const name = PH[phase][0];
 
-      if (name === 'build') {
+      if (phase === 'fly' && k > 1) {
+        const prevPeak = goalFt(chapter) * FRAC[k - 2];
+        const fl = flight();
+        if (lastA < prevPeak && fl.A >= prevPeak) {
+          newHeightAt = tAll;
+          for (let i = 0; i < 24; i++) { const a = (i / 24) * TAU; spawn({ k: 'spark', x: fl.icX, y: fl.icY - 6, vx: Math.cos(a) * 70, vy: Math.sin(a) * 70, life: 0.7, c: i % 2 ? COL.flameA : COL.white }); }
+          sfx('best');
+        }
+        lastA = fl.A;
+      }
+      if (phase === 'build') {
         const ph = (pt * 2.2) % 1, hit = ph >= 0.55;
         if (hit && !lastHit && pt > 0.3 && pt < 5.2) {
           for (let i = 0; i < 6; i++) spawn({ k: 'spark', x: hammerAt[0], y: hammerAt[1], vx: (Math.random() - 0.3) * 60, vy: -Math.random() * 60, g: 160, life: 0.35, c: i % 2 ? COL.flameA : COL.flameB });
@@ -662,142 +862,133 @@
         }
         lastHit = hit;
       }
-      if (name === 'run' && pt > 1.45 && pt - dt <= 1.45) sfx('whoosh');
-      if (name === 'melt' || name === 'fall') {
-        const m = name === 'melt' ? smooth(pt / 3.0) : 1;
-        if (name === 'melt' && Math.random() < 0.25 + m * 0.6 && wingInfo) {
-          const r = Math.random();
-          spawn({ k: 'drip', x: wingInfo.root[0] + wingInfo.ex * r, y: wingInfo.root[1] + wingInfo.ey * r, vy: 6, g: 120, life: 1.6, c: Math.random() < 0.5 ? COL.wax : COL.waxLo });
-          if (Math.random() < 0.15) sfx('drip');
-        }
+      if (phase === 'run' && pt > 1.45 && pt - dt <= 1.45) sfx('whoosh');
+      if (phase === 'melt' && wingInfo && Math.random() < 0.25 + smooth(pt / 3) * 0.6) {
+        const r = Math.random();
+        spawn({ k: 'drip', x: wingInfo.root[0] + wingInfo.ex * r, y: wingInfo.root[1] + wingInfo.ey * r, vy: 6, g: 120, life: 1.6, c: Math.random() < 0.5 ? COL.wax : COL.waxLo });
+        if (Math.random() < 0.15) sfx('drip');
       }
-      if (name === 'fall') {
-        for (let i = 0; i < 2; i++) spawn({ k: 'speed', x: Math.random() * W, y: H + 4, vy: -280 - Math.random() * 120, life: 1 });
-      }
+      if (phase === 'fall') for (let i = 0; i < 2; i++) spawn({ k: 'speed', x: Math.random() * W, y: H + 4, vy: -280 - Math.random() * 120, life: 1 });
+      if (phase === 'ascend' && Math.random() < 0.6) spawn({ k: 'spark', x: Math.random() * W, y: Math.random() * H, vx: -40, vy: 30, life: 0.5, c: COL.white });
       stepParts(dt);
 
-      if (pt >= PH[phase][1]) {
-        pt -= PH[phase][1];
-        phase = (phase + 1) % PH.length;
-        if (phase === 0) { attempt++; parts = []; lastShown = 8; }
-        if (PH[phase][0] === 'splash') {
-          for (let i = 0; i < 46; i++) spawn({ k: 'splash', x: splashX + (Math.random() - 0.5) * 8, y: splashY, vx: (Math.random() - 0.5) * 90, vy: -50 - Math.random() * 110, g: 240, life: 1.4, c: i % 3 ? COL.splashA : COL.splashB });
-          sfx('splash');
-        }
-      }
+      if (pt >= dur(phase)) { pt -= dur(phase); enter(nextPhase()); }
     }
 
-    let wingInfo = null, splashX = 150, splashY = 96, hammerAt = [84, 92];
-
     function render() {
-      const name = PH[phase][0];
+      const T = themeFor(chapter);
+      wearGear(gear);
       wingInfo = null;
 
-      if (name === 'build' || name === 'equip' || name === 'run') {
-        drawWorkshop(attempt);
-        const rackP = name === 'build' ? smooth((pt - 0.3) / 4.9) : -1;
-        drawRack(name === 'build' ? rackP : name === 'equip' && pt < 0.35 ? 1 : -1);
+      if (phase === 'build' || phase === 'equip' || phase === 'run') {
+        drawWorkshop(T, k - 1);
+        drawRack(phase === 'build' ? smooth((pt - 0.3) / 4.9) : phase === 'equip' && pt < 0.35 ? 1 : -1, gear);
         let p;
-        if (name === 'build') {
+        const sp = gear.span;
+        if (phase === 'build') {
           p = stand(62, 97);
           const ph = (pt * 2.2) % 1;
-          if (pt < 5.2 && ph < 0.55) { p.aF = [-0.15, -1.2]; } else if (pt < 5.2) { p.aF = [0.05, 0.45]; }
+          if (pt < 5.2 && ph < 0.55) p.aF = [-0.15, -1.2]; else if (pt < 5.2) p.aF = [0.05, 0.45];
           p.hammer = pt < 5.2;
           p.aB = [DOWN - 0.35, DOWN - 0.9];
-        } else if (name === 'equip') {
+        } else if (phase === 'equip') {
           p = stand(62, 97);
           if (pt < 0.35) { p.aF = [-0.2, -0.5]; p.aB = [-0.1, -0.4]; }
           else {
-            const k = (pt - 0.35) / 1.35;
-            p.wings = { phi: 0.15 + 1.1 * (0.5 - 0.5 * Math.cos(k * TAU * 2)), L: 14 + 6 * Math.sin(k * Math.PI), FL: 11 + 5 * Math.sin(k * Math.PI), melt: 0 };
+            const q = (pt - 0.35) / 1.35;
+            p.wings = { phi: 0.15 + 1.1 * (0.5 - 0.5 * Math.cos(q * TAU * 2)), L: (14 + 6 * Math.sin(q * Math.PI)) * sp, FL: (11 + 5 * Math.sin(q * Math.PI)) * sp, melt: 0, gear };
             p.aF = [DOWN - 0.6, DOWN - 1.2];
           }
         } else {
-          const k = smooth(pt / 1.6);
+          const q = smooth(pt / 1.6);
           const x = lerp(62, 236, Math.pow(pt / 1.9, 1.3));
           const jump = clamp((pt - 1.45) / 0.45, 0, 1);
           const y = 97 - Math.sin(jump * Math.PI * 0.5) * 40;
           p = stand(x, y);
           const cyc = x * 0.35;
-          p.t = -DOWN + 0.25 * k;
+          p.t = -DOWN + 0.25 * q;
           p.lF = [DOWN + Math.sin(cyc) * 0.7, DOWN + Math.sin(cyc) * 0.7 + Math.max(0, Math.cos(cyc)) * 0.9];
           p.lB = [DOWN - Math.sin(cyc) * 0.7, DOWN - Math.sin(cyc) * 0.7 + Math.max(0, -Math.cos(cyc)) * 0.9];
           p.aF = [DOWN - Math.sin(cyc) * 0.6, DOWN - Math.sin(cyc) * 0.6 - 0.6];
           p.aB = [DOWN + Math.sin(cyc) * 0.6, DOWN + Math.sin(cyc) * 0.6 - 0.6];
           if (jump > 0) { p.lF = [DOWN - 0.9, DOWN + 0.4]; p.lB = [DOWN + 0.6, DOWN + 1.4]; p.aF = [-0.9, -1.0]; }
-          p.wings = { phi: 0.2 + 1.3 * (0.5 - 0.5 * Math.cos(tAll * TAU * (jump > 0 ? 3 : 1.4))), L: 18, FL: 14, melt: 0 };
+          p.wings = { phi: 0.2 + 1.3 * (0.5 - 0.5 * Math.cos(tAll * TAU * (jump > 0 ? 3 : 1.4))), L: 18 * sp, FL: 14 * sp, melt: 0, gear };
         }
-        const o = icarus(p);
+        const o = icarus(p, gear, head);
         if (o.hammerHead) hammerAt = o.hammerHead;
         flushActors();
         drawParts(['spark']);
 
-        if (name === 'build') {
-          if (attempt === 1 && pt < 2.6) {
-            const tw = textW('BLACK ICARUS', 2);
-            box(Math.round((W - tw) / 2) - 12, 10, tw + 24, 30);
-            text('BLACK ICARUS', Math.round((W - tw) / 2), 18, 2);
-          } else if (pt > (attempt === 1 ? 2.8 : 0.5) && pt < 5.3) {
-            dialog(['ATTEMPT ' + attempt + '.', 'WAX. FEATHERS. THREAD.']);
+        if (phase === 'build') {
+          if (k === 1 && pt < 2.6) {
+            if (chapter === 1) title('ICARUS');
+            else title('CHAPTER ' + roman(chapter), T.place);
+          } else if (pt > (k === 1 ? 2.8 : 0.5) && pt < 5.3) {
+            dialog([attempt === 1 ? 'ATTEMPT 1.' : 'ATTEMPT ' + attempt + '.  BEST: ' + fmt(best) + ' FT', approach(attempt)]);
           }
-          fade(1 - pt / 0.8);
+          fade(1 - pt / 0.8, fromSun ? COL.white : COL.black);
         }
         return;
       }
 
-      // ----- outside: flight, melt, fall, splash -----
-      let alt, icX, icY, camX;
-      const flyT = name === 'fly' ? pt : 7;
-      camX = flyT * 42 + (name === 'melt' ? pt * 20 : name === 'fall' || name === 'splash' ? 60 : 0);
-      if (name === 'fly') {
-        const f = smooth(pt / 7);
-        alt = f; icX = lerp(40, 128, f); icY = lerp(86, 60, f) + Math.sin(tAll * TAU * 2) * 1.5;
-      } else if (name === 'melt') {
-        const m = pt / 3;
-        alt = 1 + 0.06 * m; icX = 128 + 12 * m; icY = 60 - 4 * m + Math.sin(tAll * 40) * m * 1.2;
-      } else if (name === 'fall') {
-        const k = pt / 2.6;
-        alt = 1.06 - 1.1 * Math.pow(k, 1.7); icX = 140 + 10 * k; icY = 56 + 34 * k;
-      } else { alt = -0.04; icX = 150; icY = 200; }
-      const seaTop = 104 + alt * 190;
-      const sunR = 7 + 30 * Math.pow(clamp(alt, 0, 1.1), 1.3);
-      const sunX = 206, sunY = 30 + 4 * clamp(alt, 0, 1);
-      sky(clamp(alt, 0, 1.1), sunX, sunY, sunR, 0);
+      // ----- outside: flight, melt, fall, splash, ascend -----
+      const fl = flight();
+      const { A, s: near, icX, icY, kpx, target, G } = fl;
+      const flyT = phase === 'fly' ? pt : flyDur();
+      const camX = flyT * 42 + (phase === 'melt' ? pt * 20 : phase === 'fall' || phase === 'splash' ? 60 : phase === 'ascend' ? pt * 30 : 0);
+      const REF = 70; // screen row where the current altitude sits
+      const seaTop = REF + 34 + A * kpx;
+      const asc = phase === 'ascend' ? smooth((pt - 0.6) / 3.0) : 0;
+      const sunR = 7 + 30 * Math.pow(clamp(near, 0, 1.1), 1.3) + asc * asc * 320;
+      const sunX = 206, sunY = 30 + 4 * clamp(near, 0, 1);
+      sky(T, clamp(A / G, 0, 1), clamp(near, 0, 1.1), A * kpx * 0.25, sunX, sunY, sunR);
 
-      // clouds
-      const CL = [[30, 40, 1.0, 0.5], [150, 22, 0.8, 0.35], [250, 55, 1.2, 0.7], [90, 70, 0.9, 0.9], [200, 95, 1.3, 1.1], [320, 30, 0.7, 0.3]];
-      for (const [x, y, s, par] of CL) {
-        const cx = mod(x - camX * par, W + 100) - 50;
-        const cy = y + alt * 160 * par - 40 * par;
-        if (cy > -20 && cy < H + 20) cloud(cx, cy, s, alt > 0.62);
+      // cloud decks at fixed heights: early attempts stay under them, later ones break through
+      if (T.clouds) {
+        const DECKS = [[0.09, [[40, 0, 1.0], [170, -8, 1.3], [300, 6, 0.9]]], [0.24, [[100, 0, 1.2], [230, 6, 0.9], [350, -4, 1.1]]], [0.42, [[20, 0, 1.1], [160, 5, 1.4], [280, -6, 1.0]]]];
+        for (const [fd, list] of DECKS) for (const [x, dy, sc] of list) {
+          const cy = REF - (fd * G - A) * kpx + dy;
+          const cx = mod(x - camX * 0.6, W + 100) - 50;
+          if (cy > -20 && cy < H + 20) cloud(cx, cy, sc, near > 0.62);
+        }
       }
       if (seaTop < H) {
-        sea(seaTop, sunX);
-        if (name === 'fly' && camX < 200) cliff(60 - camX * 1.0, seaTop);
+        sea(T, seaTop, sunX);
+        if (phase === 'fly' && camX < 200) cliff(60 - camX, seaTop);
       }
-
-      // heat shimmer near the sun
-      if (alt > 0.75) {
-        const amt = (alt - 0.75) * 4;
+      if (near > 0.75 && phase !== 'ascend') {
+        const amt = (near - 0.75) * 4;
         for (let y = 0; y < 90; y++) {
-          const s = Math.round(Math.sin(y * 0.5 + tAll * 9) * amt * 0.9);
-          if (!s) continue;
+          const sh = Math.round(Math.sin(y * 0.5 + tAll * 9) * amt * 0.9);
+          if (!sh) continue;
           const row = frame.slice(y * W, y * W + W);
-          for (let x = 0; x < W; x++) frame[y * W + x] = row[clamp(x - s, 0, W - 1)];
+          for (let x = 0; x < W; x++) frame[y * W + x] = row[clamp(x - sh, 0, W - 1)];
         }
       }
 
-      if (name !== 'splash') {
+      // the last attempt's height, waiting in the sky
+      if (k > 1 && (phase === 'fly' || phase === 'melt')) {
+        const prevLocal = G * FRAC[k - 2];
+        const by = Math.round(icY - (prevLocal - A) * kpx);
+        if (by > -4 && by < H) {
+          for (let x = 0; x < W; x++) if (mod(x + ((tAll * 20) | 0), 7) < 4) px(x, by, COL.wax);
+          const lbl = 'BEST ' + fmt(baseFt(chapter) + prevLocal);
+          text(lbl, W - textW(lbl) - 6, by - 10);
+        }
+      }
+
+      if (phase !== 'splash') {
         const p = stand(icX, icY);
-        if (name === 'fall') {
+        const sp = gear.span;
+        if (phase === 'fall') {
           const spin = -0.45 + pt * 7.5;
           p.t = spin;
-          const fl = Math.sin(pt * 22);
-          p.aF = [spin + 1.6 + fl * 0.5, spin + 1.2 + fl * 0.6];
-          p.aB = [spin - 1.6 - fl * 0.5, spin - 1.2 - fl * 0.6];
-          p.lF = [spin + Math.PI - 0.4 + fl * 0.3, spin + Math.PI - 0.1];
-          p.lB = [spin + Math.PI + 0.4 - fl * 0.3, spin + Math.PI + 0.7];
-          p.wings = { phi: 0.5 + Math.sin(pt * 30) * 1.2, L: 20, FL: 0, melt: 1 };
+          const wob = Math.sin(pt * 22);
+          p.aF = [spin + 1.6 + wob * 0.5, spin + 1.2 + wob * 0.6];
+          p.aB = [spin - 1.6 - wob * 0.5, spin - 1.2 - wob * 0.6];
+          p.lF = [spin + Math.PI - 0.4 + wob * 0.3, spin + Math.PI - 0.1];
+          p.lB = [spin + Math.PI + 0.4 - wob * 0.3, spin + Math.PI + 0.7];
+          p.wings = { phi: 0.5 + Math.sin(pt * 30) * 1.2, L: 20 * sp, FL: 0, melt: 1, gear };
           splashX = icX; splashY = seaTop;
         } else {
           p.t = -1.0;
@@ -806,11 +997,11 @@
           p.aB = [p.t + 0.15, p.t + 0.05];
           p.lF = [p.t + Math.PI - 0.15, p.t + Math.PI + 0.05];
           p.lB = [p.t + Math.PI + 0.12, p.t + Math.PI + 0.4];
-          const m = name === 'melt' ? smooth(pt / 3) : 0;
-          const hz = name === 'melt' ? 3.2 + m * 2 : 2.0;
-          p.wings = { phi: 0.1 + 2.5 * (0.5 - 0.5 * Math.cos(tAll * TAU * hz)), L: 22, FL: 17, melt: m };
+          const m = phase === 'melt' ? smooth(pt / 3) : 0;
+          const hz = phase === 'melt' ? 3.2 + m * 2 : phase === 'ascend' ? 2.6 : 2.0;
+          p.wings = { phi: 0.1 + 2.5 * (0.5 - 0.5 * Math.cos(tAll * TAU * hz)), L: 22 * sp, FL: 17 * sp, melt: m, gear };
         }
-        const out = icarus(p);
+        const out = icarus(p, gear, head);
         if (out.wing) {
           wingInfo = out.wing;
           if (out.wing.shown < lastShown) {
@@ -819,27 +1010,43 @@
           }
         }
         flushActors();
-        drawParts(['drip', 'feather', 'speed']);
+        drawParts(['drip', 'feather', 'speed', 'spark']);
       } else {
-        // splash: rings on the water, the broken frame floating
+        // splash: rings on the surface, the broken frame floating
         const st = pt;
         for (let r = 0; r < 3; r++) {
           const rr = 4 + (st - r * 0.25) * 28;
           if (rr < 4) continue;
           for (let a = 0; a < TAU; a += 0.02) {
             const x = splashX + Math.cos(a) * rr, y = splashY + 2 + Math.sin(a) * rr * 0.22;
-            if (Math.sin(a) > -0.2 && dith(x | 0, y | 0) < 1 - st / 2.4) px(x, y, COL.seaFoam);
+            if (Math.sin(a) > -0.2 && dith(x | 0, y | 0) < 1 - st / 2.4) px(x, y, T.sea[0]);
           }
         }
         const bob = Math.sin(st * 3) * 0.6;
         for (let i = 0; i < 9; i++) px(splashX - 10 + i, splashY + 2 + bob + (i > 4 ? 1 : 0), COL.strut);
         for (let i = 0; i < 7; i++) px(splashX + 4 + i, splashY + 3 - bob, COL.strut);
         drawParts(['splash', 'feather']);
-        if (st > 0.5 && st < 2.5) dialog(['AGAIN.']);
-        fade((st - 1.7) / 1.0);
+        const peak = baseFt(chapter) + target;
+        if (st > 0.5 && st < 2.9) dialog([fmt(peak) + ' FT. ' + (attempt === 1 ? 'A FIRST FLIGHT.' : 'HIGHER THAN EVER.'), 'CHANGE SOMETHING. TRY AGAIN.']);
+        fade((st - 2.1) / 1.0);
       }
 
-      if (name === 'melt' && pt > 0.3 && pt < 2.7) dialog(['THE WAX IS MELTING!']);
+      if (phase === 'melt' && pt > 0.3 && pt < 2.7) dialog(['THE WAX IS MELTING!']);
+      if (phase === 'ascend') {
+        if (pt > 0.2 && pt < 2.4) dialog(['THE WAX HOLDS!', 'INTO ' + T.goal + '.']);
+        fade((pt - 2.6) / 1.1, COL.white);
+      }
+      if (phase !== 'splash' && phase !== 'ascend') {
+        const l1 = 'ALT ' + fmt(baseFt(chapter) + A) + ' FT', l2 = tierName(A / G, T);
+        const bw = Math.max(textW(l1), textW(l2)) + 14;
+        box(6, 6, bw, 30);
+        text(l1, 13, 11); text(l2, 13, 22);
+      }
+      if (tAll - newHeightAt < 1.8) {
+        const tw = textW('NEW HEIGHT!', 2);
+        box(Math.round((W - tw) / 2) - 10, 42, tw + 20, 26);
+        text('NEW HEIGHT!', Math.round((W - tw) / 2), 48, 2);
+      }
     }
 
     // ---------- loop ----------
@@ -852,7 +1059,7 @@
     }
     function tick(ts) {
       if (!last) last = ts;
-      let dt = Math.min(0.1, (ts - last) / 1000);
+      const dt = Math.min(0.1, (ts - last) / 1000);
       last = ts;
       if (!paused) {
         acc += dt;
@@ -881,13 +1088,13 @@
     }
     requestAnimationFrame(tick);
 
-    const api = { pause: () => { paused = true; }, play: () => { paused = false; }, loopSeconds: LOOP };
-    el.__blackIcarus = api;
+    const api = { pause: () => { paused = true; }, play: () => { paused = false; } };
+    el.__icarus = api;
     return api;
   }
 
-  function auto() { document.querySelectorAll('[data-black-icarus]').forEach(mount); }
-  window.BlackIcarus = { mount };
+  function auto() { document.querySelectorAll('[data-icarus]').forEach(mount); }
+  window.Icarus = { mount };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', auto);
   else auto();
 })();
