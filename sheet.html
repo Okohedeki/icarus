@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Black Icarus contact sheet</title>
+<style>
+  body { margin: 0; background: #222; display: grid; grid-template-columns: repeat(2, 512px); gap: 6px; padding: 6px; }
+  .cell { position: relative; }
+  iframe { width: 512px; height: 288px; border: 0; display: block; }
+  span { position: absolute; left: 4px; top: 2px; color: #ff0; font: 12px monospace; background: #000a; padding: 0 3px; }
+</style>
+</head>
+<body>
+<script>
+  const times = (new URLSearchParams(location.search).get('times') || '1,4,6.4,8.4,9.5,12,16,18.5,21,23.5').split(',');
+  for (const t of times) {
+    const d = document.createElement('div'); d.className = 'cell';
+    d.innerHTML = '<iframe src="frame.html?t=' + t + '"></iframe><span>t=' + t + '</span>';
+    document.body.appendChild(d);
+  }
+</script>
+</body>
+</html>
