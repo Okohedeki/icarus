@@ -1,9 +1,9 @@
 /*
  * Icarus: a pixel-art loop in the style of 16-bit console RPGs.
  * He builds wings, flies at the sun, the wax melts, he falls, and he changes
- * something and tries again. Every attempt flies higher than the last. On the
- * fifth attempt of a chapter the wax holds, he flies into the sun, and wakes in
- * a new workshop on the far side, aiming for the next star. It never ends.
+ * one thing about the wings and tries again. Each flight climbs for longer.
+ * On the fifth attempt the wax holds and he reaches the sun; then the story
+ * starts over with a newly generated wing design, so no two cycles match.
  * Everything is drawn in code: no image files, no models.
  *
  * Embed:  <div data-icarus></div><script src="icarus.js"></script>
@@ -173,7 +173,7 @@
     ['AMBER', '#ffe6b0', '#e8a848', '#a86a20'], ['ROSE', '#fde8e8', '#e0a8b0', '#a06a78']];
   const ACCENTS = [['GOLD', '#eab53e'], ['CRIMSON', '#c03040'], ['TEAL', '#2a9a90'], ['COBALT', '#3858c8'], ['JADE', '#4aa860'], ['VIOLET', '#8a50c0'], ['EBONY', '#2a2430'], ['IVORY', '#f0e8d0']];
   const FRAMES = [['WAX', '#f6ca4a', '#b07c1c'], ['WILLOW', '#b08a50', '#6e5228'], ['BRONZE', '#d0884a', '#8a5420'], ['IRON', '#9a9ea8', '#4a4e58'], ['SILVER', '#e0e4ee', '#8a90a0'], ['OAK', '#8c5a2e', '#4e2e16']];
-  const ATTEMPTS = 10; // the last attempt of every cycle reaches the sun
+  const ATTEMPTS = 5; // the last attempt of every cycle reaches the sun
   const baseDesign = () => ({ span: 0.85, nf: 8, fl: 1, feather: FEATHER_TINTS[0], frame: FRAMES[0], thick: false, joints: false, straps: null, coverts: 0, tips: null, band: null, tipShape: 'round' });
   function rng(seed) {
     return () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -196,7 +196,7 @@
     }
     return null;
   }
-  const FIRST_CYCLE = [null, ['joints'], ['longer'], ['straps', ['LINEN', '#d8c8a0']], ['rows'], ['frame', FRAMES[2]], ['tint', FEATHER_TINTS[1]], ['tips', ACCENTS[0]], ['band', ACCENTS[1]], ['eagle']];
+  const FIRST_CYCLE = [null, ['longer'], ['rows'], ['band', ACCENTS[1]], ['tips', ACCENTS[0]]];
   const KINDS = ['joints', 'longer', 'more', 'rows', 'straps', 'frame', 'tint', 'tips', 'band', 'eagle', 'falcon'];
   // Every attempt of one cycle. The first cycle is written out; later ones are generated.
   function planCycle(cycle) {
@@ -211,7 +211,7 @@
       for (let tries = 0; !ch && tries < 40; tries++) { kind = pick(r, KINDS); if (kind !== lastKind) ch = makeChange(kind, d, r); }
       lastKind = kind;
       ch.apply();
-      d.span += 0.055; d.nf = Math.min(18, d.nf + 1);
+      d.span += 0.11; d.nf = Math.min(18, d.nf + 2);
       plan.push({ text: ch.text, design: Object.assign({}, d) });
     }
     return plan;
@@ -733,13 +733,13 @@
     }
 
     // ---------- the story ----------
-    // Ten attempts per cycle. Each one climbs for longer than the last. The tenth
+    // Five attempts per cycle. Each one climbs for longer than the last. The fifth
     // reaches the sun, and the story starts over with a newly designed set of wings.
     const T = THEMES[0];
     const G = 10000; // feet from the sea to the sun
     const KPX = 0.08; // screen pixels per foot
     const DUR = { build: 5.4, equip: 1.7, run: 1.9, melt: 2.6, fall: 2.6, splash: 2.2, ascend: 3.6 };
-    const flyDur = () => 4 + 1.3 * k;
+    const flyDur = () => 4 + 2.6 * k;
     const dur = (name) => (name === 'fly' ? flyDur() : DUR[name]);
     let cycle = 1, k = 1, phase = 'build', pt = 0, fromSun = false, lastHit = false;
     let plan = planCycle(1), gear = plan[0].design, lastShown = gear.nf;
