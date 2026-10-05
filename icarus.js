@@ -257,12 +257,14 @@
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = label;
-      b.style.cssText = 'font:600 12px/1 ui-monospace,Consolas,monospace;letter-spacing:.5px;color:#f8f8f8;background:rgba(20,28,120,.85);border:2px solid #f0f0f0;border-radius:4px;padding:6px 8px;min-height:30px;cursor:pointer';
+      b.style.cssText = 'font:500 12px/1 system-ui,-apple-system,Segoe UI,sans-serif;color:#e7e5e4;background:rgba(12,10,9,.6);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:7px 12px;min-height:30px;cursor:pointer;opacity:.75;transition:opacity .15s';
+      b.onmouseenter = b.onfocus = () => { b.style.opacity = '1'; };
+      b.onmouseleave = b.onblur = () => { b.style.opacity = '.75'; };
       bar.appendChild(b);
       return b;
     };
-    const pauseBtn = mkBtn('PAUSE');
-    const soundBtn = mkBtn('SOUND OFF');
+    const pauseBtn = mkBtn('Pause');
+    const soundBtn = mkBtn('Sound off');
     el.appendChild(bar);
 
     function resize() {
@@ -813,7 +815,7 @@
     }
     soundBtn.addEventListener('click', () => {
       soundOn = !soundOn;
-      soundBtn.textContent = soundOn ? 'SOUND ON' : 'SOUND OFF';
+      soundBtn.textContent = soundOn ? 'Sound on' : 'Sound off';
       if (soundOn) {
         audio = audio || new (window.AudioContext || window.webkitAudioContext)();
         audio.resume();
@@ -1037,7 +1039,7 @@
     }
     pauseBtn.addEventListener('click', () => {
       paused = !paused;
-      pauseBtn.textContent = paused ? 'PLAY' : 'PAUSE';
+      pauseBtn.textContent = paused ? 'Play' : 'Pause';
       if (paused && audio) audio.suspend(); else if (audio && soundOn) audio.resume();
     });
 
@@ -1046,10 +1048,10 @@
       const target = parseFloat(q) || 0;
       while (tAll < target) update(DT);
       render(); present();
-      paused = true; pauseBtn.textContent = 'PLAY';
+      paused = true; pauseBtn.textContent = 'Play';
     } else if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       update(DT); render(); present();
-      paused = true; pauseBtn.textContent = 'PLAY';
+      paused = true; pauseBtn.textContent = 'Play';
     }
     requestAnimationFrame(tick);
 
